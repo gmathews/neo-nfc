@@ -1,0 +1,14 @@
+{
+    "jsc": {
+        "parser": {
+            "syntax": "typescript"
+        },
+        "target": "es2022",
+        "baseUrl": "./",
+    },
+    "module": {
+        "type": "es6"
+    },
+    "sourceMaps": true,
+    "exclude": [".*\\.test\\.ts$"]
+}

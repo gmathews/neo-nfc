@@ -1,0 +1,50 @@
+{
+  "name": "neo-nfc",
+  "version": "1.0.0",
+  "description": "NFC read/write for Neotropolis",
+  "main": "dist/app.js",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint --fix . && tsc --noEmit",
+    "prebuild": "npm run lint && rm -rf dist",
+    "build": "swc --config-file .swcrc src -d dist --strip-leading-paths",
+    "start": "node --enable-source-maps dist/app.js",
+    "start:dev": "tsx watch src/app.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/gmathews/neo-nfc.git"
+  },
+  "keywords": [
+    "nfc",
+    "neotropolis"
+  ],
+  "author": "George Mathews <george@georgemathe.ws>",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/gmathews/neo-nfc/issues"
+  },
+  "homepage": "https://github.com/gmathews/neo-nfc#readme",
+  "dependencies": {
+    "drizzle-orm": "^0.40.0",
+    "fastify": "^5.2.1",
+    "nconf": "^0.12.1",
+    "nfc-pcsc": "^0.8.1",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^4.2.0",
+    "@swc/cli": "^0.6.0",
+    "@swc/core": "^1.11.5",
+    "@types/node": "^22.13.9",
+    "@vitest/coverage-v8": "^3.0.7",
+    "drizzle-kit": "^0.30.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.0",
+    "vitest": "^3.0.7"
+  }
+}
