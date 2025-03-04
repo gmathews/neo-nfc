@@ -16,6 +16,7 @@ export default tseslint.config(
         semi: true,
         jsx: false,
         braceStyle: '1tbs',
+        quoteProps: 'as-needed',
     }),
     {
         languageOptions: {

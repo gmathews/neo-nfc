@@ -9,14 +9,20 @@ nfc.on('reader', (reader) => {
     reader.on('card', async (card) => {
         console.log(`Card detected:`, card);
 
+        // example reading 12 bytes assuming containing text in utf8
         try {
-            // Read data from the card (example: reading block 4)
-            const blockNumber = 4; // Replace with the block you want to read
-            const data = await reader.read(blockNumber, 16); // 16 is the block size
-            console.log(`Data read from block ${blockNumber}:`, data.toString('hex'));
+            // reader.read(blockNumber, length, blockSize = 4, packetSize = 16)
+            const data = await reader.read(4, 12); // starts reading in block 4, continues to 5 and 6 in order to read 12 bytes
+            console.log(`data read`, data);
+            const payload = data.toString(); // utf8 is default encoding
+            console.log(`data converted`, payload);
         } catch (err) {
-            console.error('Error reading card:', err);
+            console.error(`error when reading data`, err);
         }
+    });
+
+    reader.on('card.off', (card) => {
+        console.log(`${reader.reader.name}  card removed`, card);
     });
 
     reader.on('error', (err) => {

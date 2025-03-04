@@ -11,7 +11,7 @@ declare module 'nfc-pcsc' {
         reader: {
             name: string;
         };
-        on(event: 'card', listener: (card: Card) => void): this;
+        on(event: 'card' | 'card.off', listener: (card: Card) => void): this;
         on(event: 'error', listener: (error: Error) => void): this;
         on(event: 'end', listener: () => void): this;
         read(block: number, length: number): Promise<Buffer>;
