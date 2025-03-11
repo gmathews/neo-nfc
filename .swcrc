@@ -10,5 +10,5 @@
         "type": "es6"
     },
     "sourceMaps": true,
-    "exclude": [".*\\.test\\.ts$"]
+    "exclude": [".*\\.d\\.ts$",".*\\.test\\.ts$"]
 }
