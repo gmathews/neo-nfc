@@ -25,7 +25,16 @@ declare module 'nfc-pcsc' {
         authenticate(block: number, keyType: number, key: string, obsolete?: boolean): Promise<boolean>;
     }
 
+    // Define the Logger interface
+    interface Logger {
+        log(message: string, ...args: unknown[]): void;
+        info(message: string, ...args: unknown[]): void;
+        warn(message: string, ...args: unknown[]): void;
+        error(message: string, ...args: unknown[]): void;
+    }
+
     export class NFC extends EventEmitter {
+        constructor(logger?: Logger);
         on(event: 'reader', listener: (reader: Reader) => void): this;
         on(event: 'error', listener: (error: Error) => void): this;
     }

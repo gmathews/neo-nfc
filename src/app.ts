@@ -1,5 +1,4 @@
 import { KEY_TYPE_A, NFC, TAG_ISO_14443_3 } from 'nfc-pcsc';
-import { nfcCard } from 'nfccard-tool';
 
 const nfc = new NFC(console); // Create an instance of the NFC class
 
@@ -60,12 +59,28 @@ nfc.on('reader', (reader) => {
         if (card.type !== TAG_ISO_14443_3) {
             return;
         }
+        const CLASSIC_1K = '000100000000';
+        const CLASSIC_4K = '000200000000';
+        const ULTRALIGHT = '000300000000';
 
-        const cardHeader = await reader.read(0, 20);
+        const type = card.atr?.subarray(0, 12).toString('hex').toUpperCase();
 
-        const tag = nfcCard.parseInfo(cardHeader);
-        console.log('tag', tag);
-
+        if (type == '3B8F8001804F0CA000000306') {
+            const version = card.atr?.subarray(13, 19).toString('hex');
+            switch (version) {
+                case CLASSIC_1K:
+                    console.log('Mifare Classic 1k');
+                    break;
+                case CLASSIC_4K:
+                    console.log('Mifare Classic 4k');
+                    break;
+                case ULTRALIGHT:
+                    console.log('Mifare Ultralight');
+                    break;
+                default:
+                    console.log('Other card');
+            }
+        }
         // Reading and writing data from/to MIFARE Classic cards (e.g. MIFARE 1K) ALWAYS requires authentication!
 
         // How does the MIFARE Classic authentication work?
@@ -86,7 +101,7 @@ nfc.on('reader', (reader) => {
         // - obsolete - (default - false for PC/SC V2.07) use true for PC/SC V2.01
 
         // Don't forget to fill YOUR keys and types! (default ones are stated below)
-        const key = 'FFFFFFFFFFFh'; // key must be a 12-chars HEX string, an instance of Buffer, or array of bytes
+        const key = 'FFFFFFFFFFFF'; // key must be a 12-chars HEX string, an instance of Buffer, or array of bytes
         const keyType = KEY_TYPE_A;
 
         try {
