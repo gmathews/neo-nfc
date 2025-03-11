@@ -1,6 +1,7 @@
 import { KEY_TYPE_A, NFC, TAG_ISO_14443_3 } from 'nfc-pcsc';
+import { nfcCard } from 'nfccard-tool';
 
-const nfc = new NFC(); // Create an instance of the NFC class
+const nfc = new NFC(console); // Create an instance of the NFC class
 
 nfc.on('reader', (reader) => {
     console.log(`Reader connected: ${reader.reader.name}`);
@@ -59,6 +60,11 @@ nfc.on('reader', (reader) => {
         if (card.type !== TAG_ISO_14443_3) {
             return;
         }
+
+        const cardHeader = await reader.read(0, 20);
+
+        const tag = nfcCard.parseInfo(cardHeader);
+        console.log('tag', tag);
 
         // Reading and writing data from/to MIFARE Classic cards (e.g. MIFARE 1K) ALWAYS requires authentication!
 

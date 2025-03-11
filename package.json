@@ -33,6 +33,7 @@
     "fastify": "^5.2.1",
     "nconf": "^0.12.1",
     "nfc-pcsc": "^0.8.1",
+    "nfccard-tool": "^0.1.1",
     "pino-pretty": "^13.0.0"
   },
   "devDependencies": {
