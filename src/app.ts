@@ -1,5 +1,15 @@
 import { KEY_TYPE_A, NFC } from 'nfc-pcsc';
 import { AuthCardReadWrite } from 'src/lib/AuthCardReadWrite.js';
+import { getFortune } from './lib/Fortunes.js';
+
+/** SCRIPT:
+ * Excuse me, I see that you are augmented
+ * *points at their neoband*
+ * If you like, I can tell your fortune for a few credits
+ * Can I see your palm?
+ * <afirmative consent>
+ * *have them place their palm, so the neoband touches the reader*
+ **/
 
 // const nfc = new NFC(console); // Create an instance of the NFC class w/ debug logging
 const nfc = new NFC(); // Create an instance of the NFC class
@@ -84,6 +94,8 @@ nfc.on('reader', (reader) => {
         } catch (err) {
             console.error('failed to read card', err);
         }
+
+        console.log(`Your luck for the day: ${getFortune(card.uid)}`);
     });
 
     reader.on('card.off', (card) => {

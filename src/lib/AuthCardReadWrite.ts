@@ -40,6 +40,14 @@ export class AuthCardReadWrite {
 
     async read(block: number) {
         await this.auth(block);
+        // - blockNumber - memory block number where to start reading
+        // - length - how many bytes to read
+        // - blockSize - 4 for MIFARE Ultralight, 16 for MIFARE Classic
+        // ! Caution! length must be divisible by blockSize
+        // ! Caution! MIFARE Classic cards have sector trailers
+        //   containing access bits instead of data, each last block in sector is sector trailer
+        //   (e.g. block 3, 7, 11, 14)
+        //   see memory structure above or https://github.com/pokusew/nfc-pcsc/issues/16#issuecomment-304989178
         const data = await this.reader.read(block, 16, this.blockSize);
         console.info(`block ${block} data read`, data.toString('hex'));
     }
