@@ -1,9 +1,11 @@
-import { KEY_TYPE_A, NFC, TAG_ISO_14443_3 } from 'nfc-pcsc';
+import { KEY_TYPE_A, NFC } from 'nfc-pcsc';
+import { AuthCardReadWrite } from 'src/lib/AuthCardReadWrite.js';
 
-const nfc = new NFC(console); // Create an instance of the NFC class
+// const nfc = new NFC(console); // Create an instance of the NFC class w/ debug logging
+const nfc = new NFC(); // Create an instance of the NFC class
 
 nfc.on('reader', (reader) => {
-    console.log(`Reader connected: ${reader.reader.name}`);
+    console.log(`Reader connected: *${reader.reader.name}*`);
     // #############
     // Example: MIFARE Classic
     // - should work well with any compatible PC/SC card reader
@@ -53,98 +55,39 @@ nfc.on('reader', (reader) => {
 
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     reader.on('card', async (card) => {
-        console.log(`Card detected:`, card);
-        // MIFARE Classic is ISO/IEC 14443-3 tag
-        // skip other standards
-        if (card.type !== TAG_ISO_14443_3) {
+        console.log(`Card _${card.uid}_ detected:`, card.atr?.toString('hex'));
+        // If we aren't attempting to R/W this type of card
+        const mifareCheck = AuthCardReadWrite.checkMifare(card);
+        if (mifareCheck === undefined) {
             return;
         }
-        const CLASSIC_1K = '000100000000';
-        const CLASSIC_4K = '000200000000';
-        const ULTRALIGHT = '000300000000';
 
-        const type = card.atr?.subarray(0, 12).toString('hex').toUpperCase();
+        // sector trailer
+        //  bytes 00-05: Key A (default 0xFFFFFFFFFFFF) (6 bytes)
+        //  bytes 06-09: Access Bits (default 0xFF0780) (4 bytes)
+        //  bytes 10-15: Key B (optional) (default 0xFFFFFFFFFFFF) (6 bytes)
 
-        if (type == '3B8F8001804F0CA000000306') {
-            const version = card.atr?.subarray(13, 19).toString('hex');
-            switch (version) {
-                case CLASSIC_1K:
-                    console.log('Mifare Classic 1k');
-                    break;
-                case CLASSIC_4K:
-                    console.log('Mifare Classic 4k');
-                    break;
-                case ULTRALIGHT:
-                    console.log('Mifare Ultralight');
-                    break;
-                default:
-                    console.log('Other card');
-            }
-        }
-        // Reading and writing data from/to MIFARE Classic cards (e.g. MIFARE 1K) ALWAYS requires authentication!
-
-        // How does the MIFARE Classic authentication work?
-        // 1. You authenticate to a specific sector using a specific key (key + keyType).
-        // 2. After the successful authentication, you are granted permissions according to the access conditions
-        //    for the given key (access conditions are specified in the trailer section of each sector).
-        //    Depending on the access conditions, you can read from / write to the blocks of this sector.
-        // 3. If you want to access data in another sectors, you have to authenticate to that sector.
-        //    Then you can access the data from the block within that sector (only from that sector).
-        // summary: MIFARE Classic will only grant permissions based on the last authentication attempt.
-        //          Consequently, if multiple reader.authenticate(...) commands are used,
-        //          only the last one has an effect on all subsequent read/write operations.
-
-        // reader.authenticate(blockNumber, keyType, key, obsolete = false)
-        // - blockNumber - the number of any block withing the sector we want to authenticate
-        // - keyType - type of key - either KEY_TYPE_A or KEY_TYPE_B
-        // - key - 6 bytes - a Buffer instance, an array of bytes, or 12-chars HEX string
-        // - obsolete - (default - false for PC/SC V2.07) use true for PC/SC V2.01
-
-        // Don't forget to fill YOUR keys and types! (default ones are stated below)
-        const key = 'FFFFFFFFFFFF'; // key must be a 12-chars HEX string, an instance of Buffer, or array of bytes
+        // Don't forget to fill YOUR keys and types for each sector! (default ones are stated below)
+        const key = 'FFFFFFFFFFFF';
         const keyType = KEY_TYPE_A;
+        const keys = Array.from({ length: mifareCheck.numOfSectors + 1 }, () => ({
+            keyType,
+            key, // key must be a 12-chars HEX string, an instance of Buffer, or array of bytes
+        }));
+
+        const authedMifareRW = new AuthCardReadWrite(reader, keys, mifareCheck.blockSize);
 
         try {
-            // we want to authenticate sector 1
-            // authenticating one block within the sector will authenticate all blocks within that sector
-            // so in our case, we choose block 4 that is within the sector 1, all blocks (4, 5, 6, 7)
-            // will be authenticated with the given key
-            await reader.authenticate(4, keyType, key);
-
-            // Note: writing might require to authenticate with a different key (based on the sector access conditions)
-            console.info('sector 1 successfully authenticated');
+            for (let block = 0; block < mifareCheck.numOfBlocks; block++) {
+                await authedMifareRW.read(block);
+            }
         } catch (err) {
-            console.error(`error when authenticating block 4 within the sector 1`, err);
-            return;
-        }
-
-        // example reading 16 bytes (one block) assuming containing 32bit integer
-        // !!! note that we don't need 16 bytes - 32bit integer takes only 4 bytes !!!
-        try {
-            // reader.read(blockNumber, length, blockSize = 4, packetSize = 16)
-            // - blockNumber - memory block number where to start reading
-            // - length - how many bytes to read
-            // - blockSize - 4 for MIFARE Ultralight, 16 for MIFARE Classic
-            // ! Caution! length must be divisible by blockSize
-            // ! Caution! MIFARE Classic cards have sector trailers
-            //   containing access bits instead of data, each last block in sector is sector trailer
-            //   (e.g. block 3, 7, 11, 14)
-            //   see memory structure above or https://github.com/pokusew/nfc-pcsc/issues/16#issuecomment-304989178
-
-            const data = await reader.read(4, 16, 16); // blockSize=16 must specified for MIFARE Classic cards
-
-            console.info(`data read`, data);
-
-            const payload = data.readInt32BE(0);
-
-            console.info('data converted', payload);
-        } catch (err) {
-            console.error(`error when reading data`, err);
+            console.error('failed to read card', err);
         }
     });
 
     reader.on('card.off', (card) => {
-        console.log(`${reader.reader.name}  card removed`, card);
+        console.log(`*${reader.reader.name}* card _${card.uid}_ removed`);
     });
 
     reader.on('error', (err) => {
@@ -152,7 +95,7 @@ nfc.on('reader', (reader) => {
     });
 
     reader.on('end', () => {
-        console.log('Reader disconnected:', reader.reader.name);
+        console.log(`Reader disconnected: *${reader.reader.name}*`);
     });
 });
 

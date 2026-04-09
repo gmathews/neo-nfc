@@ -20,8 +20,8 @@ declare module 'nfc-pcsc' {
         on(event: 'card' | 'card.off', listener: (card: Card) => void): this;
         on(event: 'error', listener: (error: Error) => void): this;
         on(event: 'end', listener: () => void): this;
-        read(blockNumber: number, length: number, blockSize = 4, packetSize = 16, readClass = 0xff): Promise<Buffer>;
-        write(blockNumber: number, data: Buffer, blockSize = 4): Promise<true | boolean[]>;
+        read(blockNumber: number, length: number, blockSize?: number, packetSize?: number, readClass?: number): Promise<Buffer>;
+        write(blockNumber: number, data: Buffer, blockSize?: number): Promise<true | boolean[]>;
         authenticate(block: number, keyType: number, key: string, obsolete?: boolean): Promise<boolean>;
     }
 
