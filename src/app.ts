@@ -1,21 +1,37 @@
+import Fastify from 'fastify';
 import { KEY_TYPE_A, NFC } from 'nfc-pcsc';
 import { AuthCardReadWrite } from 'src/lib/AuthCardReadWrite.js';
+import db from './lib/db.js';
+import { askAndSaveFeedback } from './lib/feedback.js';
 import { getFortune } from './lib/Fortunes.js';
+import logger, { color as c } from './lib/logger.js';
+import { registerRoutes } from './lib/routes.js';
+import { cardData } from './lib/schema.js';
 
 /** SCRIPT:
  * Excuse me, I see that you are augmented
  * *points at their neoband*
  * If you like, I can tell your fortune for a few credits
- * Can I see your palm?
+ * Can I see your hand?
  * <afirmative consent>
  * *have them place their palm, so the neoband touches the reader*
+ *
+ * <have them come back any time to show others >
+ * <free; if they bring another person to have their fortune told>
+ * <pyramid scheme>
  **/
+
+const app = Fastify({ loggerInstance: logger, disableRequestLogging: true });
+await registerRoutes(app);
+await app.listen({ port: 3000 });
 
 // const nfc = new NFC(console); // Create an instance of the NFC class w/ debug logging
 const nfc = new NFC(); // Create an instance of the NFC class
 
+const lastFortune = new Map<string, { pk: number }>();
+
 nfc.on('reader', (reader) => {
-    console.log(`Reader connected: *${reader.reader.name}*`);
+    logger.info(`${c.amber}reader connected: *${reader.reader.name}*${c.reset}`);
     // #############
     // Example: MIFARE Classic
     // - should work well with any compatible PC/SC card reader
@@ -65,7 +81,7 @@ nfc.on('reader', (reader) => {
 
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     reader.on('card', async (card) => {
-        console.log(`Card _${card.uid}_ detected:`, card.atr?.toString('hex'));
+        logger.info(`${c.amber}augment _${card.uid}_ detected: ${card.atr?.toString('hex') ?? 'no atr'}${c.reset}`);
         // If we aren't attempting to R/W this type of card
         const mifareCheck = AuthCardReadWrite.checkMifare(card);
         if (mifareCheck === undefined) {
@@ -88,29 +104,62 @@ nfc.on('reader', (reader) => {
         const authedMifareRW = new AuthCardReadWrite(reader, keys, mifareCheck.blockSize);
 
         try {
-            for (let block = 0; block < mifareCheck.numOfBlocks; block++) {
-                await authedMifareRW.read(block);
-            }
-        } catch (err) {
-            console.error('failed to read card', err);
-        }
+            let lastDisplayData = '';
+            let skipping = false;
+            const allData: string[] = [];
+            for (let sector = 0; sector < mifareCheck.numOfSectors; sector++) {
+                const blocks = await authedMifareRW.readSector(sector);
+                for (const { block, data, isTrailer } of blocks) {
+                    allData.push(data);
 
-        console.log(`Your luck for the day: ${getFortune(card.uid)}`);
+                    // Don't display trailers
+                    if (isTrailer) {
+                        continue;
+                    }
+
+                    // Skip all-zero rows and duplicate rows
+                    if (/^0+$/.test(data) || data === lastDisplayData) {
+                        if (!skipping) {
+                            logger.info(`${c.amber}*${c.reset}`);
+                            skipping = true;
+                        }
+                        lastDisplayData = data;
+                        continue;
+                    }
+                    logger.debug(`${c.amber}${String(block).padStart(3, '0')}  ${data}${c.reset}`);
+                    lastDisplayData = data;
+                    skipping = false;
+                }
+            }
+            await db.insert(cardData).values({ uid: card.uid, data: allData.join('') });
+            // Only give the horoscope, if the card was fully read
+            const { pk, text } = await getFortune(card.uid);
+            lastFortune.set(card.uid, { pk });
+            logger.info(`${c.amber}your daily horoscope: ${c.green}${text}${c.reset}`);
+        } catch (err) {
+            logger.error(err as Error, 'failed to read augment');
+        }
     });
 
-    reader.on('card.off', (card) => {
-        console.log(`*${reader.reader.name}* card _${card.uid}_ removed`);
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    reader.on('card.off', async (card) => {
+        const shown = lastFortune.get(card.uid);
+        if (shown) {
+            lastFortune.delete(card.uid);
+            await askAndSaveFeedback(card.uid, shown.pk);
+        }
+        logger.info(`${c.amber}*${reader.reader.name}* augment _${card.uid}_ removed${c.reset}`);
     });
 
     reader.on('error', (err) => {
-        console.error('Reader error:', err);
+        logger.error(err, 'reader error');
     });
 
     reader.on('end', () => {
-        console.log(`Reader disconnected: *${reader.reader.name}*`);
+        logger.info(`${c.amber}reader disconnected: *${reader.reader.name}*${c.reset}`);
     });
 });
 
 nfc.on('error', (err) => {
-    console.error('NFC error:', err);
+    logger.error(err, 'NFC error');
 });

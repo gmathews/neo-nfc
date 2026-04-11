@@ -5,7 +5,7 @@ import stylistic from '@stylistic/eslint-plugin';
 
 export default tseslint.config(
     {
-        ignores: ['coverage/**', 'dist/**', 'eslint.config.js', 'vitest.config.ts'],
+        ignores: ['coverage/**', 'dist/**', 'drizzle/**', 'eslint.config.js', 'vitest.config.ts', 'drizzle.config.ts'],
     },
     eslint.configs.recommended,
     tseslint.configs.strictTypeChecked,

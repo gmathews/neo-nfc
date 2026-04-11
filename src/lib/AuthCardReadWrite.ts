@@ -1,4 +1,5 @@
 import { Reader, Card, TAG_ISO_14443_3 } from 'nfc-pcsc';
+import logger from './logger.js';
 
 class AuthenticationError extends Error {
     constructor(message: string) {
@@ -40,6 +41,7 @@ export class AuthCardReadWrite {
 
     async read(block: number) {
         await this.auth(block);
+        // reader.read(blockNumber, length, blockSize = 4, packetSize = 16)
         // - blockNumber - memory block number where to start reading
         // - length - how many bytes to read
         // - blockSize - 4 for MIFARE Ultralight, 16 for MIFARE Classic
@@ -49,7 +51,31 @@ export class AuthCardReadWrite {
         //   (e.g. block 3, 7, 11, 14)
         //   see memory structure above or https://github.com/pokusew/nfc-pcsc/issues/16#issuecomment-304989178
         const data = await this.reader.read(block, 16, this.blockSize);
-        console.info(`block ${block} data read`, data.toString('hex'));
+        return data.toString('hex');
+    }
+
+    /** Reads all blocks in a sector (including trailer). Returns array of { block, data, isTrailer } */
+    async readSector(sector: number): Promise<{ block: number; data: string; isTrailer: boolean }[]> {
+        const isLowSector = sector < 32;
+        const blocksPerSector = isLowSector ? 4 : 16;
+        const firstBlock = isLowSector
+            ? sector * 4
+            : 128 + (sector - 32) * 16;
+
+        // Auth once for the sector
+        await this.auth(firstBlock);
+
+        // Read all blocks in parallel (including trailer)
+        const reads = Array.from({ length: blocksPerSector }, (_, i) => {
+            const block = firstBlock + i;
+            return this.reader.read(block, 16, this.blockSize)
+                .then((buf: Buffer) => ({
+                    block,
+                    data: buf.toString('hex'),
+                    isTrailer: i === blocksPerSector - 1,
+                }));
+        });
+        return Promise.all(reads);
     }
 
     static checkMifare(card: Card): undefined | {
@@ -76,16 +102,20 @@ export class AuthCardReadWrite {
         const version = card.atr.subarray(13, 19).toString('hex');
         switch (version) {
             case CLASSIC_1K:
-                console.log('Mifare Classic 1k');
+                logger.debug('Mifare Classic 1k');
+                // TODO: save count for user to analytics
                 return { blockSize: 16, numOfSectors: 16, numOfBlocks: 64 };
             case CLASSIC_4K:
-                console.log('Mifare Classic 4k');
+                logger.debug('Mifare Classic 4k');
+                // TODO: save count for user to analytics
                 return { blockSize: 16, numOfSectors: 40, numOfBlocks: 256 };
             case ULTRALIGHT:
-                console.log('Mifare Ultralight');
+                logger.debug('Mifare Ultralight');
+                // TODO: save count for user to analytics
                 return { blockSize: 4, numOfSectors: 16, numOfBlocks: 64 };
             default:
-                console.log('Other card');
+                logger.info('Other card');
+                // TODO: save count for user to analytics
                 return;
         }
     }
@@ -111,10 +141,10 @@ export class AuthCardReadWrite {
             await this.reader.authenticate(block, keyType, key);
 
             // Note: writing might require to authenticate with a different key (based on the sector access conditions)
-            console.info(`sector ${sector} successfully authenticated`);
+            logger.debug(`sector ${sector} successfully authenticated`);
             this.currentSector = sector;
         } catch (err) {
-            console.error(`error when authenticating block ${block} within the sector ${sector}`, err);
+            logger.error(err as Error, `error when authenticating block ${block} within the sector ${sector}`);
             throw new AuthenticationError((err as Error).message);
         }
     }
