@@ -42,7 +42,10 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
         schema: {
             querystring: {
                 type: 'object',
-                properties: { cursor: { type: 'integer' } },
+                properties: {
+                    cursor: { type: 'integer' },
+                    search: { type: 'string' },
+                },
             },
             response: {
                 200: {
@@ -65,16 +68,26 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
             },
         },
     }, async (request) => {
-        const { cursor = -1 } = request.query as { cursor?: number };
+        const { cursor = -1, search } = request.query as { cursor?: number; search?: string };
 
-        const baseSelect = () => db.select({ id: fortune.id, text: sql<string>`(select text from fortune f2 where f2.id = fortune.id order by f2.version desc limit 1)` })
+        const latestText = sql<string>`(select text from fortune f2 where f2.id = fortune.id order by f2.version desc limit 1)`;
+        const baseSelect = () => db.select({ id: fortune.id, text: latestText })
             .from(fortune)
             .groupBy(fortune.id);
 
+        const searchFilter = search
+            ? sql`${latestText} like ${'%' + search + '%'}`
+            : undefined;
+
+        const withFilters = (...conditions: (ReturnType<typeof gt> | undefined)[]) => {
+            const filtered = conditions.filter((c): c is ReturnType<typeof gt> => c !== undefined);
+            return filtered.length > 0 ? baseSelect().where(and(...filtered)) : baseSelect();
+        };
+
         const { items: fortunes, nextCursor, prevCursor } = await paginate({
-            fetchForward: () => baseSelect().where(gt(fortune.id, cursor)).orderBy(asc(fortune.id)).limit(PAGE_SIZE + 1),
+            fetchForward: () => withFilters(gt(fortune.id, cursor), searchFilter).orderBy(asc(fortune.id)).limit(PAGE_SIZE + 1),
             fetchPrev: cursor >= 0
-                ? () => baseSelect().where(lt(fortune.id, cursor)).orderBy(desc(fortune.id)).limit(PAGE_SIZE)
+                ? () => withFilters(lt(fortune.id, cursor), searchFilter).orderBy(desc(fortune.id)).limit(PAGE_SIZE)
                 : null,
             getCursor: r => r.id,
         });

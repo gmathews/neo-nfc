@@ -12,42 +12,54 @@
   }
 
   let fortunes: Fortune[] = $state([])
-  let filtered: Fortune[] = $state([])
   let nextCursor: number | null = $state(null)
   let prevCursor: number | null = $state(null)
   let selected: FortuneDetail | null = $state(null)
   let loading = $state(false)
   let search = $state('')
+  let activeSearch = $state('')
   let editText = $state('')
   let editing = $state(false)
   let saving = $state(false)
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
   async function fetchFortunes(cursor?: number) {
     loading = true
     const params = new URLSearchParams()
     if (cursor !== undefined) params.set('cursor', String(cursor))
+    if (activeSearch) params.set('search', activeSearch)
     const res = await fetch(`/api/fortune?${params}`)
     const data = await res.json()
     fortunes = data.fortunes
-    filtered = data.fortunes
     nextCursor = data.nextCursor
     prevCursor = data.prevCursor
     loading = false
   }
 
-  function filterFortunes() {
-    const q = search.trim().toLowerCase()
-    if (!q) {
-      filtered = fortunes
-      return
+  function onSearchInput() {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => {
+      activeSearch = search.trim()
+      fetchFortunes()
+    }, 750)
+  }
+
+  function onSearchKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Enter') return
+    if (debounceTimer) clearTimeout(debounceTimer)
+    const q = search.trim()
+    if (/^\d+$/.test(q)) {
+      selectFortune(Number(q))
+    } else {
+      activeSearch = q
+      fetchFortunes()
     }
-    const asNum = Number(q)
-    if (!isNaN(asNum)) {
-      // Search by ID — jump directly
-      selectFortune(asNum)
-      return
-    }
-    filtered = fortunes.filter(f => f.text.toLowerCase().includes(q))
+  }
+
+  function clearSearch() {
+    search = ''
+    activeSearch = ''
+    fetchFortunes()
   }
 
   async function selectFortune(id: number) {
@@ -83,7 +95,7 @@
 </script>
 
 {#if selected}
-  <button class="back" onclick={() => { selected = null; editing = false }}>&larr; back</button>
+  <button class="back" onclick={() => selected = null}>&larr; back</button>
   <div class="detail">
     <h2>fortune #{selected.id}</h2>
     {#if editing}
@@ -107,18 +119,21 @@
       type="text"
       placeholder="search by id or text..."
       bind:value={search}
-      oninput={filterFortunes}
-      onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && filterFortunes()}
+      oninput={onSearchInput}
+      onkeydown={onSearchKeydown}
     />
+    {#if search}
+      <button onclick={clearSearch}>clear</button>
+    {/if}
   </div>
 
   {#if loading}
     <p class="muted">loading...</p>
-  {:else if filtered.length === 0}
+  {:else if fortunes.length === 0}
     <p class="muted">no fortunes found</p>
   {:else}
     <ul>
-      {#each filtered as fortune}
+      {#each fortunes as fortune}
         <li>
           <button class="fortune-row" onclick={() => selectFortune(fortune.id)}>
             <span class="id">#{fortune.id}</span>
@@ -128,15 +143,19 @@
       {/each}
     </ul>
 
-    <div class="pagination">
-      <button disabled={!prevCursor} onclick={() => fetchFortunes(prevCursor!)}>prev</button>
-      <button disabled={!nextCursor} onclick={() => fetchFortunes(nextCursor!)}>next</button>
-    </div>
+    {#if !activeSearch}
+      <div class="pagination">
+        <button disabled={!prevCursor} onclick={() => fetchFortunes(prevCursor!)}>prev</button>
+        <button disabled={!nextCursor} onclick={() => fetchFortunes(nextCursor!)}>next</button>
+      </div>
+    {/if}
   {/if}
 {/if}
 
 <style>
   .search {
+    display: flex;
+    gap: 8px;
     margin-bottom: 12px;
   }
   .search input {
@@ -146,7 +165,16 @@
     background: var(--bg-card);
     color: var(--text-bright);
     border: 1px solid var(--border);
-    width: 100%;
+    flex: 1;
+  }
+  .search button {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 4px 12px;
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    cursor: pointer;
   }
   .back, .pagination button, .edit-btn, .edit-actions button {
     font-family: inherit;

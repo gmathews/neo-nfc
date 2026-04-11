@@ -5,7 +5,7 @@
   let view: 'users' | 'fortunes' = $state('users')
 </script>
 
-<h1>neotropolis</h1>
+<h1>neoband fortune admin</h1>
 
 <nav>
   <button class:active={view === 'users'} onclick={() => view = 'users'}>users</button>

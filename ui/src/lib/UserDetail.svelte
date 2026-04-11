@@ -35,6 +35,28 @@
   let fortuneTexts: Map<string, string> = $state(new Map())
   let copiedIdx: number | null = $state(null)
 
+  function formatCardData(hex: string): string {
+    const blockSize = 32 // 16 bytes = 32 hex chars
+    const blocks: string[] = []
+    for (let i = 0; i < hex.length; i += blockSize) {
+      blocks.push(hex.slice(i, i + blockSize))
+    }
+    // Group into sectors of 4 blocks, skip sectors where data blocks (first 3) are all zeros
+    const lines: string[] = []
+    for (let s = 0; s < blocks.length; s += 4) {
+      const dataBlocks = blocks.slice(s, s + 3)
+      const trailer = blocks[s + 3]
+      const allZero = dataBlocks.every(b => /^0*$/.test(b))
+      if (allZero) continue
+      lines.push(`sector ${s / 4}`)
+      for (let j = 0; j < dataBlocks.length; j++) {
+        if (dataBlocks[j]) lines.push(`  ${String(s + j).padStart(3, '0')}  ${dataBlocks[j]}`)
+      }
+      if (trailer) lines.push(`  ${String(s + 3).padStart(3, '0')}  ${trailer}  [trailer]`)
+    }
+    return lines.join('\n') || '(empty)'
+  }
+
   async function fetchUser(cursor?: string) {
     const params = new URLSearchParams()
     if (cursor) params.set('cursor', cursor)
@@ -163,7 +185,7 @@
             {/if}
           {/if}
           {#if event.type === 'card_read'}
-            <pre class="data-dump">{event.data}</pre>
+            <pre class="data-dump">{formatCardData(event.data)}</pre>
           {/if}
         </li>
       {/each}
