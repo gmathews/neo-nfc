@@ -203,7 +203,10 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
         schema: {
             querystring: {
                 type: 'object',
-                properties: { cursor: { type: 'string' } },
+                properties: {
+                    cursor: { type: 'string' },
+                    neoname: { type: 'string' },
+                },
             },
             response: {
                 200: {
@@ -216,6 +219,7 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
                                 properties: {
                                     uid: { type: 'string' },
                                     lastSeen: { type: 'string' },
+                                    neoname: { type: 'string', nullable: true },
                                 },
                             },
                         },
@@ -226,19 +230,30 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
             },
         },
     }, async (request) => {
-        const { cursor } = request.query as { cursor?: string };
+        const { cursor, neoname } = request.query as { cursor?: string; neoname?: string };
 
         const lastSeenCol = sql<string>`max(${cardData.createdAt})`;
-        const baseSelect = () => db.selectDistinct({ uid: cardData.uid, lastSeen: lastSeenCol })
+
+        const neonameFilter = neoname
+            ? sql`${cardData.uid} in (select uid from feedback where neoname like ${'%' + neoname + '%'})`
+            : undefined;
+
+        const neonameCol = sql<string | null>`(select neoname from feedback f where f.uid = card_data.uid and f.neoname is not null order by f.created_at desc limit 1)`;
+        const baseSelect = () => db.selectDistinct({ uid: cardData.uid, lastSeen: lastSeenCol, neoname: neonameCol })
             .from(cardData)
             .groupBy(cardData.uid);
 
+        const withFilters = (...conditions: (ReturnType<typeof lt> | undefined)[]) => {
+            const filtered = conditions.filter((c): c is ReturnType<typeof lt> => c !== undefined);
+            return filtered.length > 0 ? baseSelect().where(and(...filtered)) : baseSelect();
+        };
+
         const { items: users, nextCursor, prevCursor } = await paginate({
             fetchForward: () => cursor
-                ? baseSelect().where(lt(lastSeenCol, cursor)).orderBy(sql`${lastSeenCol} desc`).limit(PAGE_SIZE + 1)
-                : baseSelect().orderBy(sql`${lastSeenCol} desc`).limit(PAGE_SIZE + 1),
+                ? withFilters(lt(lastSeenCol, cursor), neonameFilter).orderBy(sql`${lastSeenCol} desc`).limit(PAGE_SIZE + 1)
+                : withFilters(neonameFilter).orderBy(sql`${lastSeenCol} desc`).limit(PAGE_SIZE + 1),
             fetchPrev: cursor
-                ? () => baseSelect().where(gt(lastSeenCol, cursor)).orderBy(asc(lastSeenCol)).limit(PAGE_SIZE)
+                ? () => withFilters(gt(lastSeenCol, cursor), neonameFilter).orderBy(asc(lastSeenCol)).limit(PAGE_SIZE)
                 : null,
             getCursor: r => r.lastSeen,
         });
@@ -271,7 +286,7 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
                                 fortuneVersion: { type: 'integer' },
                                 reaction: { type: 'integer' },
                                 comment: { type: 'string' },
-                                neoname: { type: 'string' },
+                                neoname: { type: 'string', nullable: true },
                             },
                         },
                         lastData: {
@@ -293,7 +308,7 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
                                     fortuneVersion: { type: 'integer' },
                                     reaction: { type: 'integer' },
                                     comment: { type: 'string' },
-                                    neoname: { type: 'string' },
+                                    neoname: { type: 'string', nullable: true },
                                     data: { type: 'string' },
                                 },
                             },
@@ -302,9 +317,13 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
                         prevCursor: { type: 'string', nullable: true },
                     },
                 },
+                404: {
+                    type: 'object',
+                    properties: { error: { type: 'string' } },
+                },
             },
         },
-    }, async (request) => {
+    }, async (request, reply) => {
         const { uid } = request.params as { uid: string };
         const { cursor } = request.query as { cursor?: string };
 
@@ -325,6 +344,10 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
             .where(eq(cardData.uid, uid));
 
         const [feedbackRows, cardRows] = await Promise.all([feedbackQuery, cardQuery]);
+
+        if (feedbackRows.length === 0 && cardRows.length === 0) {
+            return reply.status(404).send({ error: `user ${uid} not found` });
+        }
 
         const allEvents = [
             ...feedbackRows.map(r => ({

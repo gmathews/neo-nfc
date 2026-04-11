@@ -8,6 +8,13 @@
       "when": 1775881190725,
       "tag": "0000_bizarre_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1775884744056,
+      "tag": "0001_violet_toad_men",
+      "breakpoints": true
     }
   ]
 }

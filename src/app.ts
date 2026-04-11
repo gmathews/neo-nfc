@@ -29,6 +29,7 @@ await app.listen({ port: 3000 });
 const nfc = new NFC(); // Create an instance of the NFC class
 
 const lastFortune = new Map<string, { pk: number }>();
+let clearScreenAbort: AbortController | null = null;
 
 nfc.on('reader', (reader) => {
     logger.info(`${c.amber}reader connected: *${reader.reader.name}*${c.reset}`);
@@ -81,6 +82,11 @@ nfc.on('reader', (reader) => {
 
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     reader.on('card', async (card) => {
+        if (clearScreenAbort) {
+            clearScreenAbort.abort();
+            clearScreenAbort = null;
+            process.stdout.write('\x1b[2J\x1b[H');
+        }
         logger.info(`${c.amber}augment _${card.uid}_ detected: ${card.atr?.toString('hex') ?? 'no atr'}${c.reset}`);
         // If we aren't attempting to R/W this type of card
         const mifareCheck = AuthCardReadWrite.checkMifare(card);
@@ -148,7 +154,34 @@ nfc.on('reader', (reader) => {
             lastFortune.delete(card.uid);
             await askAndSaveFeedback(card.uid, shown.pk);
         }
-        logger.info(`${c.amber}*${reader.reader.name}* augment _${card.uid}_ removed${c.reset}`);
+        logger.info(`${c.amber}*${reader.reader.name}* augment _${card.uid}_ removed${c.reset}\n`);
+        logger.info(`${c.amber}press enter to clear screen${c.reset}`);
+        const abort = new AbortController();
+        clearScreenAbort = abort;
+        await new Promise<void>((resolve) => {
+            const onData = () => {
+                cleanup();
+                process.stdout.write('\x1b[2J\x1b[H');
+                resolve();
+            };
+            const onAbort = () => {
+                cleanup();
+                resolve();
+            };
+            const cleanup = () => {
+                process.stdin.setRawMode(false);
+                process.stdin.pause();
+                process.stdin.removeListener('data', onData);
+                abort.signal.removeEventListener('abort', onAbort);
+                if (clearScreenAbort === abort) {
+                    clearScreenAbort = null;
+                }
+            };
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+            process.stdin.on('data', onData);
+            abort.signal.addEventListener('abort', onAbort);
+        });
     });
 
     reader.on('error', (err) => {

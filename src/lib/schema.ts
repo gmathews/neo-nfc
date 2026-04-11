@@ -22,6 +22,6 @@ export const feedback = sqliteTable('feedback', {
     fortunePk: integer('fortune_pk').notNull().references(() => fortune.pk),
     reaction: integer('reaction').notNull(),
     comment: text('comment').notNull(),
-    neoname: text('neoname').notNull(),
+    neoname: text('neoname'),
     createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
 });

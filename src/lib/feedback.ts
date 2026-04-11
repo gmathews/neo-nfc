@@ -41,8 +41,9 @@ export async function askAndSaveFeedback(uid: string, fortunePk: number): Promis
             });
         });
 
-        await db.insert(feedback).values({ uid, fortunePk, reaction, comment: comment.trim(), neoname: neoname.trim() || 'anonymous' });
-        logger.info(`${c.amber}thanks, ${neoname.trim() || 'anonymous'}!${c.reset}\n`);
+        const trimmedName = neoname.trim() || null;
+        await db.insert(feedback).values({ uid, fortunePk, reaction, comment: comment.trim(), neoname: trimmedName });
+        logger.info(`${c.amber}thanks, ${trimmedName ?? 'anonymous'}!${c.reset}`);
     } catch (err) {
         rl.close();
         throw err;
