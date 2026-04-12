@@ -243,18 +243,25 @@ export async function registerRoutes(app: FastifyInstance<RawServerDefault, RawR
             },
         },
     }, async (request) => {
-        const { cursor, neoname } = request.query as { cursor?: string; neoname?: string };
+        const { cursor, neoname: neonameSearch } = request.query as { cursor?: string; neoname?: string };
 
-        const lastSeenCol = sql<string>`max(${cardData.createdAt})`;
+        const allUsers = sql`(
+            select uid, created_at from card_data
+            union all
+            select uid, created_at from feedback
+        )`;
+        const lastSeenCol = sql<string>`max(u.created_at)`;
+        const neonameCol = sql<string | null>`(select neoname from feedback f where f.uid = u.uid and f.neoname is not null order by f.created_at desc limit 1)`;
 
-        const neonameFilter = neoname
-            ? sql`${cardData.uid} in (select uid from feedback where neoname like ${'%' + neoname + '%'})`
+        const baseSelect = () => db.select({
+            uid: sql<string>`u.uid`,
+            lastSeen: lastSeenCol,
+            neoname: neonameCol,
+        }).from(sql`${allUsers} as u`).groupBy(sql`u.uid`);
+
+        const neonameFilter = neonameSearch
+            ? sql`u.uid in (select uid from feedback where neoname like ${'%' + neonameSearch + '%'})`
             : undefined;
-
-        const neonameCol = sql<string | null>`(select neoname from feedback f where f.uid = card_data.uid and f.neoname is not null order by f.created_at desc limit 1)`;
-        const baseSelect = () => db.selectDistinct({ uid: cardData.uid, lastSeen: lastSeenCol, neoname: neonameCol })
-            .from(cardData)
-            .groupBy(cardData.uid);
 
         const withFilters = (...conditions: (ReturnType<typeof lt> | undefined)[]) => {
             const filtered = conditions.filter((c): c is ReturnType<typeof lt> => c !== undefined);
