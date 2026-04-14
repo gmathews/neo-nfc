@@ -21,6 +21,13 @@ import { cardData } from './lib/schema.js';
  * <pyramid scheme>
  **/
 
+// TODO: add ascii art.
+// TODO: add write for terminal 418 kiosk(which fortune they got)
+// TODO: fortunes based on neosites
+// TODO: gives new fortune the next day, but doesn't ask for feedback
+// TODO: display read needs to include first line if it has something
+// TODO: break usb connector and have wires from inside laptop back
+
 const app = Fastify({ loggerInstance: logger, disableRequestLogging: true });
 await registerRoutes(app);
 await app.listen({ port: 3000 });
