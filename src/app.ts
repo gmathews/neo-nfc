@@ -22,10 +22,8 @@ import { cardData } from './lib/schema.js';
  **/
 
 // TODO: add ascii art.
-// TODO: add write for terminal 418 kiosk(which fortune they got)
+// TODO: make ui less janky
 // TODO: fortunes based on neosites
-// TODO: gives new fortune the next day, but doesn't ask for feedback
-// TODO: display read needs to include first line if it has something
 // TODO: break usb connector and have wires from inside laptop back
 
 const app = Fastify({ loggerInstance: logger, disableRequestLogging: true });
@@ -74,12 +72,20 @@ let clearScreenAbort: AbortController | null = null;
 //  block 10 - data block
 //  block 11 - sector trailer 2
 // ... and so on ...
-async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
+function hexToAscii(hex: string): string {
+    let out = '';
+    for (let i = 0; i < hex.length; i += 2) {
+        const byte = parseInt(hex.slice(i, i + 2), 16);
+        out += byte >= 0x20 && byte < 0x7f ? String.fromCharCode(byte) : '.';
+    }
+    return out;
+}
+
+function getMifareRW(reader: Reader, card: Card): { rw: AuthCardReadWrite; numOfSectors: number } | undefined {
     const mifareCheck = AuthCardReadWrite.checkMifare(card);
     if (mifareCheck === undefined) {
         return;
     }
-
     // sector trailer
     //  bytes 00-05: Key A (default 0xFFFFFFFFFFFF) (6 bytes)
     //  bytes 06-09: Access Bits (default 0xFF0780) (4 bytes)
@@ -87,17 +93,41 @@ async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
     // Don't forget to fill YOUR keys and types for each sector! (default ones are stated below)
     const key = 'FFFFFFFFFFFF';
     const keyType = KEY_TYPE_A;
-    const keys = Array.from({ length: mifareCheck.numOfSectors + 1 }, () => ({
-        keyType,
-        key,
-    }));
+    const keys = Array.from({ length: mifareCheck.numOfSectors + 1 }, () => ({ keyType, key }));
+    return { rw: new AuthCardReadWrite(reader, keys, mifareCheck.blockSize), numOfSectors: mifareCheck.numOfSectors };
+}
 
-    const authedMifareRW = new AuthCardReadWrite(reader, keys, mifareCheck.blockSize);
+// Layout: "h3LLraz0r" (9B) + "/" (1B) + secs BE u32 (4B) + "/" (1B) + fortuneId (1B) = 16B
+const FORTUNE_BLOCK = 120; // sector 30, block 0
+
+function encodeFortuneBadge(fortuneId: number): string {
+    const buf = Buffer.alloc(16);
+    buf.write('h3LLraz0r/', 0, 'ascii');
+    buf.writeUInt32BE(Math.floor(Date.now() / 1000), 10);
+    buf.write('/', 14, 'ascii');
+    buf.writeUInt8(fortuneId, 15);
+    return buf.toString('hex');
+}
+
+async function writeFortuneBadge(reader: Reader, card: Card, fortuneId: number): Promise<void> {
+    const mifare = getMifareRW(reader, card);
+    if (mifare === undefined) {
+        return;
+    }
+    await mifare.rw.write(FORTUNE_BLOCK, encodeFortuneBadge(fortuneId));
+}
+
+async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
+    const mifare = getMifareRW(reader, card);
+    if (mifare === undefined) {
+        return;
+    }
+    const { rw: authedMifareRW, numOfSectors } = mifare;
 
     let lastDisplayData = '';
     let skipping = false;
     const allData: string[] = [];
-    for (let sector = 0; sector < mifareCheck.numOfSectors; sector++) {
+    for (let sector = 0; sector < numOfSectors; sector++) {
         const blocks = await authedMifareRW.readSector(sector);
         for (const { block, data, isTrailer } of blocks) {
             allData.push(data);
@@ -116,7 +146,7 @@ async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
                 lastDisplayData = data;
                 continue;
             }
-            logger.debug(`${c.amber}${String(block).padStart(3, '0')}  ${data}${c.reset}`);
+            logger.info(`${c.amber}${String(block).padStart(3, '0')}  ${data}  [${hexToAscii(data)}]${c.reset}`);
             lastDisplayData = data;
             skipping = false;
         }
@@ -126,7 +156,7 @@ async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
 
 function displayPrompt() {
     process.stdout.write('\x1b[2J\x1b[H');
-    logger.info(`${c.amber}pre-cog future site v1.01${c.reset}`);
+    logger.info(`${c.amber}pre-cog futur3 site v1.01${c.reset}`);
     logger.info(`${c.amber}> awaiting augment interface...${c.reset}`);
 }
 
@@ -189,9 +219,18 @@ nfc.on('reader', async (reader) => {
             }
         }
         // Give the horoscope
-        const { pk, text } = await getFortune(card.uid);
+        const { pk, id: fortuneId, text } = await getFortune(card.uid);
         lastFortune.set(card.uid, { pk });
         logger.info(`${c.amber}your daily horoscope: ${c.green}${text}${c.reset}`);
+
+        // Try and save a badge and notify user to find terminal 418
+        if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
+            try {
+                await writeFortuneBadge(reader, card, fortuneId);
+            } catch (err) {
+                logger.error(err as Error, 'failed to write augment');
+            }
+        }
     });
 
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
@@ -199,7 +238,14 @@ nfc.on('reader', async (reader) => {
         const shown = lastFortune.get(card.uid);
         if (shown) {
             lastFortune.delete(card.uid);
-            await askAndSaveFeedback(card.uid, shown.pk);
+            const secondTime = await askAndSaveFeedback(card.uid, shown.pk);
+            if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
+                if (secondTime) {
+                    logger.info(`${c.amber}did you visit ${c.blue}terminal 418${c.amber}?${c.reset}`);
+                } else {
+                    logger.info(`${c.amber}visit ${c.blue}terminal 418${c.reset}`);
+                }
+            }
         }
         logger.info(`${c.amber}augment _${card.uid}_ removed${c.reset}\n`);
         await waitForClear();

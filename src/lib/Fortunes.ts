@@ -3,7 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import db from './db.js';
 import { fortune } from './schema.js';
 
-export async function getFortune(uid: string): Promise<{ pk: number; text: string }> {
+export async function getFortune(uid: string): Promise<{ pk: number; id: number; text: string }> {
     const date = new Date();
     const dateStr = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
     const hash = createHash('sha256').update(`${uid}:${dateStr}`).digest();
@@ -18,5 +18,5 @@ export async function getFortune(uid: string): Promise<{ pk: number; text: strin
     if (latest.length === 0) {
         throw new Error(`no fortune found for id ${id}`);
     }
-    return { pk: latest[0].pk, text: latest[0].text };
+    return { pk: latest[0].pk, id, text: latest[0].text };
 }

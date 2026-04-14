@@ -16,6 +16,7 @@ export const color = {
     amber: '\x1b[38;5;214m',
     green: '\x1b[32m',
     red: '\x1b[31m',
+    blue: '\x1b[38;5;39m',
     reset: '\x1b[0m',
 } as const;
 

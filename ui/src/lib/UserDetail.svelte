@@ -34,8 +34,22 @@
   let error: string | null = $state(null)
   let fortuneTexts: Map<string, string> = $state(new Map())
   let copiedIdx: number | null = $state(null)
+  let viewMode: 'hex' | 'ascii' = $state('hex')
 
-  function formatCardData(hex: string): string {
+  function hexToAscii(hex: string): string {
+    let out = ''
+    for (let i = 0; i < hex.length; i += 2) {
+      const byte = parseInt(hex.slice(i, i + 2), 16)
+      out += byte >= 0x20 && byte < 0x7f ? String.fromCharCode(byte) : '.'
+    }
+    return out
+  }
+
+  function formatBlock(block: string, mode: 'hex' | 'ascii'): string {
+    return mode === 'ascii' ? hexToAscii(block) : block
+  }
+
+  function formatCardData(hex: string, mode: 'hex' | 'ascii'): string {
     const blockSize = 32 // 16 bytes = 32 hex chars
     const blocks: string[] = []
     for (let i = 0; i < hex.length; i += blockSize) {
@@ -50,9 +64,9 @@
       if (allZero) continue
       lines.push(`sector ${s / 4}`)
       for (let j = 0; j < dataBlocks.length; j++) {
-        if (dataBlocks[j]) lines.push(`  ${String(s + j).padStart(3, '0')}  ${dataBlocks[j]}`)
+        if (dataBlocks[j]) lines.push(`  ${String(s + j).padStart(3, '0')}  ${formatBlock(dataBlocks[j], mode)}`)
       }
-      if (trailer) lines.push(`  ${String(s + 3).padStart(3, '0')}  ${trailer}  [trailer]`)
+      if (trailer) lines.push(`  ${String(s + 3).padStart(3, '0')}  ${formatBlock(trailer, mode)}  [trailer]`)
     }
     return lines.join('\n') || '(empty)'
   }
@@ -170,6 +184,9 @@
               {#if event.neoname}<span class="neoname">{event.neoname}</span>{/if}
             {/if}
             {#if event.type === 'card_read'}
+              <button class="copy-btn" onclick={() => viewMode = viewMode === 'hex' ? 'ascii' : 'hex'}>
+                {viewMode}
+              </button>
               <button class="copy-btn" onclick={() => copyData((event as CardReadEvent).data, i)}>
                 {copiedIdx === i ? 'copied' : 'copy'}
               </button>
@@ -185,7 +202,7 @@
             {/if}
           {/if}
           {#if event.type === 'card_read'}
-            <pre class="data-dump">{formatCardData(event.data)}</pre>
+            <pre class="data-dump">{formatCardData(event.data, viewMode)}</pre>
           {/if}
         </li>
       {/each}
@@ -259,7 +276,7 @@
     overflow-x: auto;
     word-break: break-all;
     white-space: pre-wrap;
-    user-select: all;
+    user-select: text;
   }
   .copy-btn {
     font-family: inherit;

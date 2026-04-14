@@ -1,17 +1,18 @@
 import { createInterface } from 'node:readline/promises';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 import db from './db.js';
 import { feedback } from './schema.js';
 import logger, { color as c } from './logger.js';
 
-export async function askAndSaveFeedback(uid: string, fortunePk: number): Promise<void> {
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+export async function askAndSaveFeedback(uid: string, fortunePk: number): Promise<boolean> {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const existing = await db.select({ id: feedback.id })
         .from(feedback)
-        .where(and(eq(feedback.uid, uid), like(feedback.createdAt, `${today}%`)))
+        .where(and(eq(feedback.uid, uid), gte(feedback.createdAt, startOfToday)))
         .limit(1);
     if (existing.length > 0) {
-        return;
+        return true;
     }
 
     const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -44,6 +45,7 @@ export async function askAndSaveFeedback(uid: string, fortunePk: number): Promis
         const trimmedName = neoname.trim() || null;
         await db.insert(feedback).values({ uid, fortunePk, reaction, comment: comment.trim(), neoname: trimmedName });
         logger.info(`${c.amber}thanks, ${trimmedName ?? 'anonymous'}!${c.reset}`);
+        return false;
     } catch (err) {
         rl.close();
         throw err;

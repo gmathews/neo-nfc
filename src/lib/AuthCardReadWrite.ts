@@ -39,6 +39,15 @@ export class AuthCardReadWrite {
         this.blockSize = blockSize;
     }
 
+    async write(block: number, hexData: string) {
+        if (hexData.length !== this.blockSize * 2) {
+            throw new Error(`write data must be ${this.blockSize * 2} hex chars (got ${hexData.length})`);
+        }
+        await this.auth(block);
+        const buf = Buffer.from(hexData, 'hex');
+        await this.reader.write(block, buf, this.blockSize);
+    }
+
     async read(block: number) {
         await this.auth(block);
         // reader.read(blockNumber, length, blockSize = 4, packetSize = 16)
