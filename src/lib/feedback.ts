@@ -1,10 +1,9 @@
-import { createInterface } from 'node:readline/promises';
 import { and, eq, gte } from 'drizzle-orm';
 import db from './db.js';
 import { feedback } from './schema.js';
-import logger, { color as c } from './logger.js';
+import { tag as t, TUI } from './tui.js';
 
-export async function askAndSaveFeedback(uid: string, fortunePk: number): Promise<boolean> {
+export async function askAndSaveFeedback(tui: TUI, uid: string, fortunePk: number): Promise<boolean> {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const existing = await db.select({ id: feedback.id })
@@ -15,39 +14,23 @@ export async function askAndSaveFeedback(uid: string, fortunePk: number): Promis
         return true;
     }
 
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-        const comment = await rl.question(`${c.amber}any thoughts on your fortune? ${c.reset}`);
-        const neoname = await rl.question(`${c.amber}what is your neoname? ${c.reset}`);
-        rl.close();
+    const values = await tui.askForm('feedback', [
+        { type: 'text', name: 'comment', label: 'any thoughts on your fortune?' },
+        { type: 'text', name: 'neoname', label: 'what is your neoname?' },
+        { type: 'choice', name: 'reaction', label: 'rate your fortune', options: [
+            { label: '▲ positive', value: '1' },
+            { label: '● neutral', value: '0' },
+            { label: '▼ negative', value: '-1' },
+        ] },
+    ]);
+    const { comment, neoname } = values;
+    const reaction = parseInt(values.reaction, 10);
+    if (reaction === 1) tui.log(t.green('▲ positive'));
+    else if (reaction === -1) tui.log(t.red('▼ negative'));
+    else tui.log(t.amber('● neutral'));
 
-        logger.info(`${c.amber}rate your fortune: [up] positive / [down] negative / [enter] neutral${c.reset}`);
-        const reaction = await new Promise<number>((resolve) => {
-            process.stdin.setRawMode(true);
-            process.stdin.resume();
-            process.stdin.once('data', (data: Buffer) => {
-                process.stdin.setRawMode(false);
-                process.stdin.pause();
-                const key = data.toString();
-                if (key === '\x1b[A') {
-                    logger.info(`${c.green}▲ positive${c.reset}`);
-                    resolve(1);
-                } else if (key === '\x1b[B') {
-                    logger.info(`${c.red}▼ negative${c.reset}`);
-                    resolve(-1);
-                } else {
-                    logger.info(`${c.amber}● neutral${c.reset}`);
-                    resolve(0);
-                }
-            });
-        });
-
-        const trimmedName = neoname.trim() || null;
-        await db.insert(feedback).values({ uid, fortunePk, reaction, comment: comment.trim(), neoname: trimmedName });
-        logger.info(`${c.amber}thanks, ${trimmedName ?? 'anonymous'}!${c.reset}`);
-        return false;
-    } catch (err) {
-        rl.close();
-        throw err;
-    }
+    const trimmedName = neoname.trim() || null;
+    await db.insert(feedback).values({ uid, fortunePk, reaction, comment: comment.trim(), neoname: trimmedName });
+    tui.log(t.amber(`thanks, ${trimmedName ?? 'anonymous'}!`));
+    return false;
 }

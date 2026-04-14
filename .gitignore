@@ -2,3 +2,4 @@ node_modules/
 dist/
 coverage/
 neo-nfc.db
+*.log

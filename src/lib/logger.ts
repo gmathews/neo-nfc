@@ -5,8 +5,9 @@ const logger = pino({
     transport: {
         target: 'pino-pretty',
         options: {
-            ignore: 'pid,hostname,time,level',
-            messageFormat: '{msg}',
+            destination: './kiosk.log',
+            mkdir: true,
+            ignore: 'pid,hostname',
             colorize: false,
         },
     },

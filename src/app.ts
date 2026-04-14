@@ -4,9 +4,10 @@ import { AuthCardReadWrite } from 'src/lib/AuthCardReadWrite.js';
 import db from './lib/db.js';
 import { askAndSaveFeedback } from './lib/feedback.js';
 import { getFortune } from './lib/Fortunes.js';
-import logger, { color as c } from './lib/logger.js';
+import logger from './lib/logger.js';
 import { registerRoutes } from './lib/routes.js';
 import { cardData } from './lib/schema.js';
+import { initTUI, tag as t } from './lib/tui.js';
 
 /** SCRIPT:
  * Excuse me, I see that you are augmented
@@ -30,12 +31,14 @@ const app = Fastify({ loggerInstance: logger, disableRequestLogging: true });
 await registerRoutes(app);
 await app.listen({ port: 3000 });
 
+const tui = initTUI();
+tui.setBanner(t.amber('pre-cog futur3 site v1.01'), t.amber('> awaiting augment interface...'));
+
 // const nfc = new NFC(console); // Create an instance of the NFC class w/ debug logging
 const nfc = new NFC(); // Create an instance of the NFC class
 
 const ACR122U_PREFIX = 'ACS ACR122U';
 const lastFortune = new Map<string, { pk: number }>();
-let clearScreenAbort: AbortController | null = null;
 
 // ## Note about the card's data structure
 //
@@ -94,7 +97,8 @@ function getMifareRW(reader: Reader, card: Card): { rw: AuthCardReadWrite; numOf
     const key = 'FFFFFFFFFFFF';
     const keyType = KEY_TYPE_A;
     const keys = Array.from({ length: mifareCheck.numOfSectors + 1 }, () => ({ keyType, key }));
-    return { rw: new AuthCardReadWrite(reader, keys, mifareCheck.blockSize), numOfSectors: mifareCheck.numOfSectors };
+    return { rw: new AuthCardReadWrite(reader, keys, mifareCheck.blockSize, mifareCheck.numOfBlocks),
+        numOfSectors: mifareCheck.numOfSectors };
 }
 
 // Layout: "h3LLraz0r" (9B) + "/" (1B) + secs BE u32 (4B) + "/" (1B) + fortuneId (1B) = 16B
@@ -140,13 +144,13 @@ async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
             // Skip all-zero rows and duplicate rows
             if (/^0+$/.test(data) || data === lastDisplayData) {
                 if (!skipping) {
-                    logger.info(`${c.amber}*${c.reset}`);
+                    tui.log(t.amber('*'));
                     skipping = true;
                 }
                 lastDisplayData = data;
                 continue;
             }
-            logger.info(`${c.amber}${String(block).padStart(3, '0')}  ${data}  [${hexToAscii(data)}]${c.reset}`);
+            tui.log(t.amber(`${String(block).padStart(3, '0')}  ${data}  [${hexToAscii(data)}]`));
             lastDisplayData = data;
             skipping = false;
         }
@@ -154,66 +158,19 @@ async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
     await db.insert(cardData).values({ uid: card.uid, data: allData.join('') });
 }
 
-function displayPrompt() {
-    process.stdout.write('\x1b[2J\x1b[H');
-    logger.info(`${c.amber}pre-cog futur3 site v1.01${c.reset}`);
-    logger.info(`${c.amber}> awaiting augment interface...${c.reset}`);
-}
-
-function waitForClear(): Promise<void> {
-    logger.info(`${c.amber}press enter to clear screen${c.reset}`);
-    const abort = new AbortController();
-    clearScreenAbort = abort;
-    return new Promise<void>((resolve) => {
-        const onData = () => {
-            cleanup();
-            displayPrompt();
-            resolve();
-        };
-        const onAbort = () => {
-            cleanup();
-            resolve();
-        };
-        const cleanup = () => {
-            process.stdin.setRawMode(false);
-            process.stdin.pause();
-            process.stdin.removeListener('data', onData);
-            abort.signal.removeEventListener('abort', onAbort);
-            if (clearScreenAbort === abort) {
-                clearScreenAbort = null;
-            }
-        };
-        process.stdin.setRawMode(true);
-        process.stdin.resume();
-        process.stdin.on('data', onData);
-        abort.signal.addEventListener('abort', onAbort);
-    });
-}
-
-let prompted = false;
-
-// eslint-disable-next-line @typescript-eslint/no-misused-promises
-nfc.on('reader', async (reader) => {
-    logger.info(`${c.amber}reader connected: *${reader.reader.name}*${c.reset}`);
-    if (!prompted) {
-        prompted = true;
-        await waitForClear();
-    }
+nfc.on('reader', (reader) => {
+    tui.log(t.amber(`reader connected: *${reader.reader.name}*`));
 
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     reader.on('card', async (card) => {
-        if (clearScreenAbort) {
-            clearScreenAbort.abort();
-            clearScreenAbort = null;
-            process.stdout.write('\x1b[2J\x1b[H');
-        }
-        logger.info(`${c.amber}${reader.reader.name.substring(0, 7).toLocaleLowerCase()} augment _${card.uid}_ detected: ${card.atr?.toString('hex') ?? 'no atr'}${c.reset}`);
+        tui.log(t.amber(`${reader.reader.name.substring(0, 7).toLocaleLowerCase()} augment _${card.uid}_ detected: ${card.atr?.toString('hex') ?? 'no atr'}`));
 
         if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
             try {
                 await readAndStoreCard(reader, card);
             } catch (err) {
                 logger.error(err as Error, 'failed to read augment');
+                tui.log(t.red('failed to read augment'));
                 // Don't give the horoscope if we couldn't read
                 return;
             }
@@ -221,14 +178,16 @@ nfc.on('reader', async (reader) => {
         // Give the horoscope
         const { pk, id: fortuneId, text } = await getFortune(card.uid);
         lastFortune.set(card.uid, { pk });
-        logger.info(`${c.amber}your daily horoscope: ${c.green}${text}${c.reset}`);
+        tui.log(`${t.amber('your daily horoscope:')} ${t.green(text)}`);
 
         // Try and save a badge and notify user to find terminal 418
         if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
             try {
                 await writeFortuneBadge(reader, card, fortuneId);
             } catch (err) {
-                logger.error(err as Error, 'failed to write augment');
+                const msg = `failed to write augment ${(err as Error).message}`;
+                logger.error(err as Error, msg);
+                tui.log(t.red(msg));
             }
         }
     });
@@ -238,17 +197,16 @@ nfc.on('reader', async (reader) => {
         const shown = lastFortune.get(card.uid);
         if (shown) {
             lastFortune.delete(card.uid);
-            const secondTime = await askAndSaveFeedback(card.uid, shown.pk);
+            const secondTime = await askAndSaveFeedback(tui, card.uid, shown.pk);
             if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
                 if (secondTime) {
-                    logger.info(`${c.amber}did you visit ${c.blue}terminal 418${c.amber}?${c.reset}`);
+                    tui.log(`${t.amber('did you visit')} ${t.blue('terminal 418')}${t.amber('?')}`);
                 } else {
-                    logger.info(`${c.amber}visit ${c.blue}terminal 418${c.reset}`);
+                    tui.log(`${t.amber('visit')} ${t.blue('terminal 418')}`);
                 }
             }
         }
-        logger.info(`${c.amber}augment _${card.uid}_ removed${c.reset}\n`);
-        await waitForClear();
+        tui.log(t.amber(`augment _${card.uid}_ removed`));
     });
 
     reader.on('error', (err) => {
@@ -256,7 +214,7 @@ nfc.on('reader', async (reader) => {
     });
 
     reader.on('end', () => {
-        logger.info(`${c.amber}reader disconnected: *${reader.reader.name}*${c.reset}`);
+        tui.log(t.amber(`reader disconnected: *${reader.reader.name}*`));
     });
 });
 

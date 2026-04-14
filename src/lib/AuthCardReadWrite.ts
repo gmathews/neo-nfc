@@ -33,15 +33,18 @@ export class AuthCardReadWrite {
     // - keyType - type of key - either KEY_TYPE_A or KEY_TYPE_B
     // - key - 6 bytes - a Buffer instance, an array of bytes, or 12-chars HEX string
     // - obsolete - (default - false for PC/SC V2.07) use true for PC/SC V2.01
-    constructor(reader: Reader, keys: Mifare[], blockSize: Blocksize) {
+    constructor(reader: Reader, keys: Mifare[], blockSize: Blocksize, numOfBlocks: number) {
         this.reader = reader;
         this.keys = keys;
         this.blockSize = blockSize;
+        this.numOfBlocks = numOfBlocks;
     }
 
     async write(block: number, hexData: string) {
         if (hexData.length !== this.blockSize * 2) {
             throw new Error(`write data must be ${this.blockSize * 2} hex chars (got ${hexData.length})`);
+        } else if (block >= this.numOfBlocks) {
+            throw new Error(`block ${block} doesn't fit in ${this.numOfBlocks}`);
         }
         await this.auth(block);
         const buf = Buffer.from(hexData, 'hex');
@@ -162,4 +165,5 @@ export class AuthCardReadWrite {
     private reader: Reader;
     private currentSector: number | undefined;
     private blockSize: Blocksize;
+    private numOfBlocks: number;
 }
