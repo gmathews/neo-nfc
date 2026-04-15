@@ -4,7 +4,7 @@ import { AuthCardReadWrite } from 'src/lib/AuthCardReadWrite.js';
 import db from 'src/lib/db.js';
 import { askAndSaveFeedback } from 'src/lib/feedback.js';
 import { getFortune } from 'src/lib/Fortunes.js';
-import logger from 'src/lib/logger.js';
+import logger, { toError } from 'src/lib/logger.js';
 import { registerRoutes } from 'src/lib/routes.js';
 import { cardData } from 'src/lib/schema.js';
 import { initTUI, tag as t } from 'src/lib/tui.js';
@@ -106,55 +106,61 @@ async function readAndStoreCard(reader: Reader, card: Card): Promise<void> {
     await db.insert(cardData).values({ uid: card.uid, data: allData.join('') });
 }
 
+function reportError(err: unknown, msg: string): void {
+    logger.error(toError(err), msg);
+    tui.log(t.red(msg));
+}
+
+async function handleCard(reader: Reader, card: Card): Promise<void> {
+    tui.log(t.amber(`${reader.reader.name.substring(0, 7).toLocaleLowerCase()} augment _${card.uid}_ detected: ${card.atr?.toString('hex') ?? 'no atr'}`));
+
+    const isAcr122u = reader.reader.name.startsWith(ACR122U_PREFIX);
+    if (isAcr122u) {
+        try {
+            await readAndStoreCard(reader, card);
+        } catch (err) {
+            reportError(err, 'failed to read augment');
+            return;
+        }
+    }
+
+    const { pk, id: fortuneId, text } = await getFortune(card.uid);
+    lastFortune.set(card.uid, { pk });
+    tui.log(`${t.amber('your daily horoscope:')} ${t.green(text)}`);
+
+    if (isAcr122u) {
+        try {
+            await writeFortuneBadge(reader, card, fortuneId);
+        } catch (err) {
+            reportError(err, `failed to write augment ${toError(err).message}`);
+        }
+    }
+}
+
+async function handleCardOff(reader: Reader, card: Card): Promise<void> {
+    const shown = lastFortune.get(card.uid);
+    if (shown) {
+        lastFortune.delete(card.uid);
+        const secondTime = await askAndSaveFeedback(tui, card.uid, shown.pk);
+        if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
+            if (secondTime) {
+                tui.log(`${t.amber('did you visit')} ${t.blue('terminal 418')}${t.amber('?')}`);
+            } else {
+                tui.log(`${t.amber('visit')} ${t.blue('terminal 418')}`);
+            }
+        }
+    }
+    tui.log(t.amber(`augment _${card.uid}_ removed`));
+}
+
 nfc.on('reader', (reader) => {
     tui.log(t.amber(`reader connected: *${reader.reader.name}*`));
 
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    reader.on('card', async (card) => {
-        tui.log(t.amber(`${reader.reader.name.substring(0, 7).toLocaleLowerCase()} augment _${card.uid}_ detected: ${card.atr?.toString('hex') ?? 'no atr'}`));
-
-        if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
-            try {
-                await readAndStoreCard(reader, card);
-            } catch (err) {
-                logger.error(err as Error, 'failed to read augment');
-                tui.log(t.red('failed to read augment'));
-                // Don't give the horoscope if we couldn't read
-                return;
-            }
-        }
-        // Give the horoscope
-        const { pk, id: fortuneId, text } = await getFortune(card.uid);
-        lastFortune.set(card.uid, { pk });
-        tui.log(`${t.amber('your daily horoscope:')} ${t.green(text)}`);
-
-        // Try and save a badge and notify user to find terminal 418
-        if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
-            try {
-                await writeFortuneBadge(reader, card, fortuneId);
-            } catch (err) {
-                const msg = `failed to write augment ${(err as Error).message}`;
-                logger.error(err as Error, msg);
-                tui.log(t.red(msg));
-            }
-        }
+    reader.on('card', (card) => {
+        void handleCard(reader, card);
     });
-
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    reader.on('card.off', async (card) => {
-        const shown = lastFortune.get(card.uid);
-        if (shown) {
-            lastFortune.delete(card.uid);
-            const secondTime = await askAndSaveFeedback(tui, card.uid, shown.pk);
-            if (reader.reader.name.startsWith(ACR122U_PREFIX)) {
-                if (secondTime) {
-                    tui.log(`${t.amber('did you visit')} ${t.blue('terminal 418')}${t.amber('?')}`);
-                } else {
-                    tui.log(`${t.amber('visit')} ${t.blue('terminal 418')}`);
-                }
-            }
-        }
-        tui.log(t.amber(`augment _${card.uid}_ removed`));
+    reader.on('card.off', (card) => {
+        void handleCardOff(reader, card);
     });
 
     reader.on('error', (err) => {

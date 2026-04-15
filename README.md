@@ -36,6 +36,26 @@ sector 2:
  block 11 - sector trailer 2
 ... and so on ...
 
+### Reading and Writing Data
+Reading and writing data from/to MIFARE Classic cards (e.g. MIFARE 1K) ALWAYS requires authentication!
+Writing might require to authenticate with a different key (based on the sector access conditions)
+#### How does the MIFARE Classic authentication work?
+1. You authenticate to a specific sector using a specific key (key + keyType).
+2. After the successful authentication, you are granted permissions according to the access conditions
+   for the given key (access conditions are specified in the trailer section of each sector).
+   Depending on the access conditions, you can read from / write to the blocks of this sector.
+3. If you want to access data in another sectors, you have to authenticate to that sector.
+   Then you can access the data from the block within that sector (only from that sector).
+summary: MIFARE Classic will only grant permissions based on the last authentication attempt.
+         Consequently, if multiple reader.authenticate(...) commands are used,
+         only the last one has an effect on all subsequent read/write operations.
+
+reader.authenticate(blockNumber, keyType, key, obsolete = false)
+- blockNumber - the number of any block withing the sector we want to authenticate
+- keyType - type of key - either KEY_TYPE_A or KEY_TYPE_B
+- key - 6 bytes - a Buffer instance, an array of bytes, or 12-chars HEX string
+- obsolete - (default - false for PC/SC V2.07) use true for PC/SC V2.01
+
 # Trouble Shooting
 to delete a user:
 ```bash
