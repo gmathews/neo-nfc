@@ -1,7 +1,8 @@
+// Prompts the user for a reaction + comment after their fortune, skipping if they already left feedback today.
 import { and, eq, gte } from 'drizzle-orm';
-import db from './db.js';
-import { feedback } from './schema.js';
 import { tag as t, TUI } from './tui.js';
+import db from 'src/lib/db.js';
+import { feedback } from 'src/lib/schema.js';
 
 export async function askAndSaveFeedback(tui: TUI, uid: string, fortunePk: number): Promise<boolean> {
     const now = new Date();
@@ -15,14 +16,15 @@ export async function askAndSaveFeedback(tui: TUI, uid: string, fortunePk: numbe
     }
 
     const values = await tui.askForm('feedback', [
-        { type: 'text', name: 'comment', label: 'any thoughts on your fortune?' },
+        { type: 'text', name: 'comment', label: 'how do you feel about your horoscope?' },
         { type: 'text', name: 'neoname', label: 'what is your neoname?' },
-        { type: 'choice', name: 'reaction', label: 'rate your fortune', options: [
+        { type: 'choice', name: 'reaction', label: 'rate your horoscope', default: '0', options: [
             { label: '▲ positive', value: '1' },
             { label: '● neutral', value: '0' },
             { label: '▼ negative', value: '-1' },
         ] },
     ]);
+    if (!values) return false;
     const { comment, neoname } = values;
     const reaction = parseInt(values.reaction, 10);
     if (reaction === 1) tui.log(t.green('▲ positive'));

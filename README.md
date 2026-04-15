@@ -1,3 +1,53 @@
+# neo-nfc
+
+A kiosk fortune teller for [Neotropolis](https://www.neotropolis.com/about), built on top of NFC-enabled *neobands*. When a participant taps their band on the reader, the kiosk reads the card, shows a personalized daily horoscope, writes a fortune badge back to the card, and prompts the user for feedback.
+
+The repo has three surfaces:
+
+- **Kiosk TUI** (`src/app.ts` + `src/kiosk/`) — a cyberpunk terminal UI built on [neo-blessed](https://github.com/embarklabs/neo-blessed) that drives the NFC read/write flow.
+- **HTTP API** (`src/lib/routes/`) — a [Fastify](https://fastify.dev/) server on `:3000` with OpenAPI docs at `/docs`.
+- **Admin panel** (`ui/`) — a [Svelte](https://svelte.dev/) + [Vite](https://vite.dev/) app for browsing users, editing fortunes, and reading feedback.
+
+**Hardware:** an [ACS ACR122U](https://www.acs.com.hk/en/products/3/acr122u-usb-nfc-reader/) USB NFC reader and MIFARE Classic 1K/4K or MIFARE Ultralight cards.
+
+## Running
+
+Install deps and run migrations:
+
+```bash
+npm install
+npm run db:migrate
+```
+
+Start the kiosk (TUI + HTTP API on `:3000`):
+
+```bash
+npm run build
+npm start
+```
+
+Start the admin panel in a separate terminal:
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+## Architecture
+
+```
+  ACR122U reader ──USB──▶ ┌──────────────────────────────┐
+                          │  src/app.ts                  │
+                          │   ├─ src/kiosk/   (TUI)      │       ┌────────┐
+                          │   └─ src/lib/routes/ ◀───────┼──HTTP─┤  ui/   │
+                          │      fastify :3000           │       │ admin  │
+                          └──────────────┬───────────────┘       └────────┘
+                                         ▼
+                                   SQLite (drizzle)
+                                     neo-nfc.db
+```
+
 # Understanding neoband software
 
 ## Note about the card's data structure
@@ -57,18 +107,20 @@ reader.authenticate(blockNumber, keyType, key, obsolete = false)
 - obsolete - (default - false for PC/SC V2.07) use true for PC/SC V2.01
 
 # Trouble Shooting
+Replace `<UID>` below with the card's uid (shown in the kiosk TUI when the card is tapped).
+
 to delete a user:
 ```bash
-sqlite3 neo-nfc.db "DELETE FROM feedback WHERE uid = '8bf55407'; DELETE FROM card_data WHERE uid = '8bf55407';"
+sqlite3 neo-nfc.db "DELETE FROM feedback WHERE uid = '<UID>'; DELETE FROM card_data WHERE uid = '<UID>';"
 ```
 to clear today's feedback:
 ```bash
 sqlite3 neo-nfc.db "
     DELETE FROM feedback
-    WHERE uid = '8bf55407'
+    WHERE uid = '<UID>'
       AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', 'localtime', 'start of day', 'utc');
     DELETE FROM card_data
-    WHERE uid = '8bf55407'
+    WHERE uid = '<UID>'
       AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', 'localtime', 'start of day', 'utc');
   "
 ```

@@ -1,5 +1,6 @@
+// MIFARE Classic/Ultralight reader/writer with per-sector authentication caching.
 import { Reader, Card, TAG_ISO_14443_3 } from 'nfc-pcsc';
-import logger, { toError } from './logger.js';
+import logger, { toError } from 'src/lib/logger.js';
 
 class AuthenticationError extends Error {
     constructor(message: string) {

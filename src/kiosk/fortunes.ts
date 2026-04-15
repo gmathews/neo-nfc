@@ -1,7 +1,8 @@
+// Picks a deterministic daily fortune for a uid by hashing uid+date, returning the latest version of that fortune.
 import { createHash } from 'node:crypto';
 import { desc, eq } from 'drizzle-orm';
-import db from './db.js';
-import { fortune } from './schema.js';
+import db from 'src/lib/db.js';
+import { fortune } from 'src/lib/schema.js';
 
 export async function getFortune(uid: string): Promise<{ pk: number; id: number; text: string }> {
     const date = new Date();

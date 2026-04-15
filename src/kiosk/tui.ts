@@ -1,4 +1,9 @@
+// Cyberpunk terminal UI built on neo-blessed: banner, scrolling log, right-side art/horoscope panel, and a modal askForm.
 import blessed from 'neo-blessed';
+import { createMatrix } from './ascii.js';
+
+const LOG_WIDTH = 80;
+const FORM_WIDTH = 60;
 
 export const tag = {
     amber: (s: string) => `{#ffa500-fg}${s}{/}`,
@@ -9,15 +14,33 @@ export const tag = {
 
 export type FormField
     = | { type: 'text'; name: string; label: string }
-        | { type: 'choice'; name: string; label: string; options: { label: string; value: string }[] };
+        | { type: 'choice'; name: string; label: string; options: { label: string; value: string }[]; default?: string };
+
+export interface LogLineHandle {
+    update: (content: string) => void;
+}
+
+export interface SpinnerHandle {
+    newLine: (content: string) => void;
+    setContent: (content: string) => void;
+    finalize: (final: string) => void;
+    stop: () => void;
+}
 
 export interface TUI {
     log: (msg: string) => void;
+    logLine: (initial: string) => LogLineHandle;
+    spinner: (render: (frame: string, content: string) => string) => SpinnerHandle;
     clear: () => void;
     setBanner: (line1: string, line2?: string) => void;
-    askForm: (title: string, fields: FormField[]) => Promise<Record<string, string>>;
+    setPanel: (content: string) => void;
+    clearPanel: () => void;
+    askForm: (title: string, fields: FormField[], header?: string) => Promise<Record<string, string> | null>;
+    dismissForm: () => void;
     destroy: () => void;
 }
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 export function initTUI(): TUI {
     const screen = blessed.screen({ smartCSR: true, title: 'neotropolis' });
@@ -38,7 +61,7 @@ export function initTUI(): TUI {
         parent: screen,
         top: 3,
         left: 0,
-        right: 0,
+        width: LOG_WIDTH,
         bottom: 1,
         border: 'line',
         tags: true,
@@ -50,13 +73,110 @@ export function initTUI(): TUI {
         padding: { left: 1, right: 1 },
     });
 
+    const panel = blessed.box({
+        parent: screen,
+        top: 3,
+        left: LOG_WIDTH,
+        right: 0,
+        bottom: 1,
+        border: 'line',
+        tags: true,
+        wrap: false,
+        scrollable: false,
+        style: { border: { fg: 214 }, fg: 214 },
+        padding: { left: 1, right: 1 },
+    });
+
+    let activeForm: { dismiss: () => void } | null = null;
+    const dismissForm = () => activeForm?.dismiss();
+    screen.key(['escape'], dismissForm);
+
+    let panelOverride: string | null = null;
+    const matrix = createMatrix();
+    function renderPanel() {
+        const w = (panel.width as number) - (panel.iwidth as number);
+        const h = (panel.height as number) - (panel.iheight as number);
+        panel.setContent(matrix(w, h, panelOverride ?? undefined));
+        screen.render();
+    }
+    const panelTimer = setInterval(renderPanel, 120);
+
     function render() {
         screen.render();
     }
 
-    function clear() {
-        logBox.setContent('');
+    const lines: string[] = [];
+    function flushLog() {
+        logBox.setContent(lines.join('\n'));
+        logBox.setScrollPerc(100);
         render();
+    }
+
+    function logFn(msg: string) {
+        lines.push(msg);
+        flushLog();
+    }
+
+    function logLineFn(initial: string): LogLineHandle {
+        lines.push(initial);
+        const idx = lines.length - 1;
+        flushLog();
+        return {
+            update: (content) => {
+                lines[idx] = content;
+                flushLog();
+            },
+        };
+    }
+
+    function spinnerFn(renderFrame: (frame: string, content: string) => string): SpinnerHandle {
+        let frameIdx = 0;
+        let content = '';
+        let handle: LogLineHandle | null = null;
+        const id = setInterval(() => {
+            frameIdx = (frameIdx + 1) % SPINNER_FRAMES.length;
+            if (handle) handle.update(renderFrame(SPINNER_FRAMES[frameIdx], content));
+        }, 80);
+        return {
+            newLine: (c) => {
+                if (handle) handle.update(renderFrame(' ', content));
+                content = c;
+                handle = logLineFn(renderFrame(SPINNER_FRAMES[frameIdx], content));
+            },
+            setContent: (c) => {
+                content = c;
+                if (handle) handle.update(renderFrame(SPINNER_FRAMES[frameIdx], content));
+            },
+            finalize: (final) => {
+                if (handle) {
+                    handle.update(final);
+                    handle = null;
+                }
+            },
+            stop: () => {
+                clearInterval(id);
+                if (handle) {
+                    handle.update(renderFrame(' ', content));
+                    handle = null;
+                }
+            },
+        };
+    }
+
+    function setPanel(content: string) {
+        panelOverride = content;
+        renderPanel();
+    }
+
+    function clearPanel() {
+        panelOverride = null;
+        renderPanel();
+    }
+
+    function clear() {
+        lines.length = 0;
+        flushLog();
+        clearPanel();
     }
 
     // @types/blessed is incomplete for listbar; blessed accepts prefix styles and command keys
@@ -85,25 +205,28 @@ export function initTUI(): TUI {
     screen.render();
 
     return {
-        log: (msg) => {
-            logBox.log(msg);
-            render();
-        },
+        log: logFn,
+        logLine: logLineFn,
+        spinner: spinnerFn,
+        setPanel,
+        clearPanel,
         clear,
         setBanner: (l1, l2) => {
             banner.setContent(l2 ? `${l1}\n${l2}` : l1);
             render();
         },
-        askForm: (title, fields) => new Promise((resolve) => {
+        dismissForm,
+        askForm: (title, fields, header) => new Promise((resolve) => {
             const rowsPerField = 3; // label + widget + spacer
-            const height = 2 + fields.length * rowsPerField + 2;
+            const headerRows = header ? 2 : 0; // header text + spacer
+            const height = 2 + headerRows + fields.length * rowsPerField + 1;
             const form = blessed.form({
                 parent: screen,
                 border: 'line',
-                width: '80%',
+                left: Math.floor((LOG_WIDTH - FORM_WIDTH) / 2),
+                width: FORM_WIDTH,
                 height,
                 top: 'center',
-                left: 'center',
                 keys: true,
                 mouse: true,
                 label: ` ${title} `,
@@ -111,6 +234,21 @@ export function initTUI(): TUI {
                 style: { border: { fg: '#ffa500' }, label: { fg: '#ffa500' } },
                 padding: { left: 1, right: 1 },
             });
+
+            let finished = false;
+            function finish(values: Record<string, string> | null) {
+                if (finished) return;
+                finished = true;
+                if (activeForm === myForm) activeForm = null;
+                form.destroy();
+                render();
+                resolve(values);
+            }
+            const dismiss = () => {
+                finish(null);
+            };
+            const myForm = { dismiss };
+            activeForm = myForm;
 
             interface TextInput { kind: 'text'; name: string; box: blessed.Widgets.TextboxElement }
             interface ChoiceInput { kind: 'choice'; name: string; options: { label: string; value: string }[]; buttons: blessed.Widgets.BlessedElement[]; selected: number }
@@ -124,10 +262,22 @@ export function initTUI(): TUI {
                 });
             };
 
+            if (header) {
+                blessed.text({
+                    parent: form,
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 1,
+                    tags: true,
+                    content: header,
+                });
+            }
+
             fields.forEach((f, i) => {
                 blessed.text({
                     parent: form,
-                    top: i * rowsPerField,
+                    top: headerRows + i * rowsPerField,
                     left: 0,
                     right: 0,
                     height: 1,
@@ -137,7 +287,7 @@ export function initTUI(): TUI {
                 if (f.type === 'text') {
                     const box = blessed.textbox({
                         parent: form,
-                        top: i * rowsPerField + 1,
+                        top: headerRows + i * rowsPerField + 1,
                         left: 0,
                         right: 0,
                         height: 1,
@@ -150,13 +300,16 @@ export function initTUI(): TUI {
                     inputs.push({ kind: 'text', name: f.name, box });
                 } else {
                     const buttons: blessed.Widgets.BlessedElement[] = [];
-                    const choice: ChoiceInput = { kind: 'choice', name: f.name, options: f.options, buttons, selected: 0 };
+                    const defaultIdx = f.default !== undefined
+                        ? f.options.findIndex(o => o.value === f.default)
+                        : 0;
+                    const choice: ChoiceInput = { kind: 'choice', name: f.name, options: f.options, buttons, selected: defaultIdx >= 0 ? defaultIdx : 0 };
                     let colOffset = 0;
                     f.options.forEach((opt, j) => {
                         const width = opt.label.length + 4;
                         const btn = blessed.box({
                             parent: form,
-                            top: i * rowsPerField + 1,
+                            top: headerRows + i * rowsPerField + 1,
                             left: colOffset,
                             width,
                             height: 1,
@@ -194,9 +347,7 @@ export function initTUI(): TUI {
                     if (inp.kind === 'text') values[inp.name] = inp.box.getValue();
                     else values[inp.name] = inp.options[inp.selected].value;
                 }
-                form.destroy();
-                render();
-                resolve(values);
+                finish(values);
             }
 
             function focusIdx(i: number) {
@@ -218,6 +369,7 @@ export function initTUI(): TUI {
                 };
                 if (inp.kind === 'text') {
                     inp.box.on('submit', advance);
+                    inp.box.on('cancel', dismiss);
                 } else {
                     inp.buttons.forEach((btn) => {
                         btn.key(['left'], () => {
@@ -239,6 +391,9 @@ export function initTUI(): TUI {
 
             focusIdx(0);
         }),
-        destroy: () => { screen.destroy(); },
+        destroy: () => {
+            clearInterval(panelTimer);
+            screen.destroy();
+        },
     };
 }
