@@ -36,7 +36,6 @@
     "@libsql/client": "^0.17.2",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.8.4",
-    "nconf": "^0.13.0",
     "neo-blessed": "^0.2.0",
     "nfc-pcsc": "^0.8.1",
     "pino-pretty": "^13.1.3"

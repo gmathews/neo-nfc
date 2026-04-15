@@ -115,19 +115,15 @@ export class AuthCardReadWrite {
         switch (version) {
             case CLASSIC_1K:
                 logger.debug('Mifare Classic 1k');
-                // TODO: save count for user to analytics
                 return { blockSize: 16, numOfSectors: 16, numOfBlocks: 64 };
             case CLASSIC_4K:
                 logger.debug('Mifare Classic 4k');
-                // TODO: save count for user to analytics
                 return { blockSize: 16, numOfSectors: 40, numOfBlocks: 256 };
             case ULTRALIGHT:
                 logger.debug('Mifare Ultralight');
-                // TODO: save count for user to analytics
                 return { blockSize: 4, numOfSectors: 16, numOfBlocks: 64 };
             default:
                 logger.info('Other card');
-                // TODO: save count for user to analytics
                 return;
         }
     }

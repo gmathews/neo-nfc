@@ -1,28 +1,15 @@
 import Fastify from 'fastify';
 import { Card, KEY_TYPE_A, NFC, Reader } from 'nfc-pcsc';
 import { AuthCardReadWrite } from 'src/lib/AuthCardReadWrite.js';
-import db from './lib/db.js';
-import { askAndSaveFeedback } from './lib/feedback.js';
-import { getFortune } from './lib/Fortunes.js';
-import logger from './lib/logger.js';
-import { registerRoutes } from './lib/routes.js';
-import { cardData } from './lib/schema.js';
-import { initTUI, tag as t } from './lib/tui.js';
+import db from 'src/lib/db.js';
+import { askAndSaveFeedback } from 'src/lib/feedback.js';
+import { getFortune } from 'src/lib/Fortunes.js';
+import logger from 'src/lib/logger.js';
+import { registerRoutes } from 'src/lib/routes.js';
+import { cardData } from 'src/lib/schema.js';
+import { initTUI, tag as t } from 'src/lib/tui.js';
 
-/** SCRIPT:
- * Excuse me, I see that you are augmented
- * *points at their neoband*
- * If you like, I can tell your fortune for a few credits
- * Can I see your hand?
- * <afirmative consent>
- * *have them place their palm, so the neoband touches the reader*
- *
- * <have them come back any time to show others >
- * <free; if they bring another person to have their fortune told>
- * <pyramid scheme>
- **/
-
-// TODO: add ascii art.
+// TODO: add ascii art
 // TODO: make ui less janky
 // TODO: fortunes based on neosites
 // TODO: break usb connector and have wires from inside laptop back
@@ -40,41 +27,6 @@ const nfc = new NFC(); // Create an instance of the NFC class
 const ACR122U_PREFIX = 'ACS ACR122U';
 const lastFortune = new Map<string, { pk: number }>();
 
-// ## Note about the card's data structure
-//
-// ### MIFARE Classic EV1 1K
-// - 1024 × 8 bit EEPROM memory
-// - 16 sectors of 4 blocks
-// - see https://www.nxp.com/docs/en/data-sheet/MF1S50YYX_V1.pdf
-//
-// ### MIFARE Classic EV1 4K
-// - 4096 × 8 bit EEPROM memory
-// - 32 sectors of 4 blocks and 8 sectors of 16 blocks
-// - see https://www.nxp.com/docs/en/data-sheet/MF1S70YYX_V1.pdf
-//
-// One block contains 16 bytes.
-// Don't forget specify the blockSize argument blockSize=16 in reader.read and reader.write calls.
-// The smallest amount of data to write is one block. You can write only the entire blocks (card limitation).
-//
-// sector 0
-//  block 0 - manufacturer data (read only)
-//  block 1 - data block
-//  block 2 - data block
-//  block 3 - sector trailer 0
-//   bytes 00-05: Key A (default 0xFFFFFFFFFFFF) (6 bytes)
-//   bytes 06-09: Access Bits (default 0xFF0780) (4 bytes)
-//   bytes 10-15: Key B (optional) (default 0xFFFFFFFFFFFF) (6 bytes)
-// sector 1:
-//  block 4 - data block
-//  block 5 - data block
-//  block 6 - data block
-//  block 7 - sector trailer 1
-// sector 2:
-//  block 8 - data block
-//  block 9 - data block
-//  block 10 - data block
-//  block 11 - sector trailer 2
-// ... and so on ...
 function hexToAscii(hex: string): string {
     let out = '';
     for (let i = 0; i < hex.length; i += 2) {
@@ -89,10 +41,6 @@ function getMifareRW(reader: Reader, card: Card): { rw: AuthCardReadWrite; numOf
     if (mifareCheck === undefined) {
         return;
     }
-    // sector trailer
-    //  bytes 00-05: Key A (default 0xFFFFFFFFFFFF) (6 bytes)
-    //  bytes 06-09: Access Bits (default 0xFF0780) (4 bytes)
-    //  bytes 10-15: Key B (optional) (default 0xFFFFFFFFFFFF) (6 bytes)
     // Don't forget to fill YOUR keys and types for each sector! (default ones are stated below)
     const key = 'FFFFFFFFFFFF';
     const keyType = KEY_TYPE_A;
