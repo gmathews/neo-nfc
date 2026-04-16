@@ -29,10 +29,10 @@ export async function askAndSaveFeedback(tui: TUI, uid: string, fortunePk: numbe
     const reaction = parseInt(values.reaction, 10);
     if (reaction === 1) tui.log(t.green('▲ positive'));
     else if (reaction === -1) tui.log(t.red('▼ negative'));
-    else tui.log(t.amber('● neutral'));
+    else tui.log(t.lime('● neutral'));
 
     const trimmedName = neoname.trim() || null;
     await db.insert(feedback).values({ uid, fortunePk, reaction, comment: comment.trim(), neoname: trimmedName });
-    tui.log(t.amber(`thanks, ${trimmedName ?? 'anonymous'}!`));
+    tui.log(t.lime(`thanks, ${trimmedName ?? 'anonymous'}!`));
     return false;
 }

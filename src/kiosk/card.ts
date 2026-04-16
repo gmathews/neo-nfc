@@ -53,7 +53,7 @@ async function readAndStoreCard(tui: TUI, reader: Reader, card: Card): Promise<v
     }
     const { rw: authedMifareRW, numOfSectors } = mifare;
 
-    const spinner = tui.spinner((frame, content) => t.amber(`${frame} ${content}`));
+    const spinner = tui.spinner((frame, content) => t.lime(`${frame} ${content}`));
     const allData: string[] = [];
     let lastDisplayData = '';
     let skipping = false;
@@ -78,7 +78,7 @@ async function readAndStoreCard(tui: TUI, reader: Reader, card: Card): Promise<v
                     spinner.setContent(prefix + data.slice(0, i));
                     await sleep(3);
                 }
-                spinner.finalize(t.amber(`  ${prefix}${data}${suffix}`));
+                spinner.finalize(t.lime(`  ${prefix}${data}${suffix}`));
                 lastDisplayData = data;
                 skipping = false;
             }
@@ -106,7 +106,7 @@ export function createCardHandlers(tui: TUI): CardHandlers {
         tui.dismissForm();
         tui.clearPanel();
         const readerName = reader.reader.name.substring(0, 7).toLocaleLowerCase();
-        tui.log(t.amber(augmentSplash(readerName, card.uid)));
+        tui.log(t.lime(augmentSplash(readerName, card.uid)));
 
         const isAcr122 = isAcr122u(reader);
         if (isAcr122) {
@@ -133,16 +133,16 @@ export function createCardHandlers(tui: TUI): CardHandlers {
     }
 
     async function handleCardOff(reader: Reader, card: Card): Promise<void> {
-        tui.log(t.amber(severedSplash(card.uid)));
+        tui.log(t.lime(severedSplash(card.uid)));
         const shown = lastFortune.get(card.uid);
         if (shown) {
             lastFortune.delete(card.uid);
             const secondTime = await askAndSaveFeedback(tui, card.uid, shown.pk);
             if (isAcr122u(reader)) {
                 if (secondTime) {
-                    tui.log(`${t.amber('did you visit')} ${t.blue('terminal 418')}${t.amber('?')}`);
+                    tui.log(`${t.lime('did you visit')} ${t.blue('terminal 418')}${t.lime('?')}`);
                 } else {
-                    tui.log(`${t.amber('visit')} ${t.blue('terminal 418')}`);
+                    tui.log(`${t.lime('visit')} ${t.blue('terminal 418')}`);
                 }
             }
         }

@@ -15,14 +15,14 @@ await app.register(routes);
 await app.listen({ port: 3000 });
 
 const tui = initTUI();
-tui.setBanner(t.amber('pre-cog futur3 site v1.01'), t.amber('> awaiting augment interface...'));
+tui.setBanner(t.lime('pre-cog futur3 site v1.01'), t.lime('> awaiting augment interface...'));
 
 // const nfc = new NFC(console); // w/ debug logging
 const nfc = new NFC();
 const { handleCard, handleCardOff } = createCardHandlers(tui);
 
 nfc.on('reader', (reader) => {
-    tui.log(t.amber(`reader connected: *${reader.reader.name}*`));
+    tui.log(t.lime(`reader connected: *${reader.reader.name}*`));
 
     reader.on('card', (card) => {
         void handleCard(reader, card);
@@ -36,7 +36,7 @@ nfc.on('reader', (reader) => {
     });
 
     reader.on('end', () => {
-        tui.log(t.amber(`reader disconnected: *${reader.reader.name}*`));
+        tui.log(t.lime(`reader disconnected: *${reader.reader.name}*`));
     });
 });
 

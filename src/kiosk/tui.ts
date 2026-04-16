@@ -5,11 +5,20 @@ import { createMatrix } from './ascii.js';
 const LOG_WIDTH = 80;
 const FORM_WIDTH = 60;
 
+export const palette = {
+    lime: '#88ff88', // primary accent — labels, banner text, active selection
+    limeBright: '#aaffaa', // input text, choice buttons, matrix overlay
+    chrome: '#00aa44', // borders, listbar background
+    dim: '#4a8a4a', // hint footer
+    focusBg: '#003311', // textbox focus background
+    blue: '#4fc1ff', // cross-reference highlights (terminal 418)
+};
+
 export const tag = {
-    amber: (s: string) => `{#ffa500-fg}${s}{/}`,
+    lime: (s: string) => `{${palette.lime}-fg}${s}{/}`,
     green: (s: string) => `{green-fg}${s}{/}`,
     red: (s: string) => `{red-fg}${s}{/}`,
-    blue: (s: string) => `{#4fc1ff-fg}${s}{/}`,
+    blue: (s: string) => `{${palette.blue}-fg}${s}{/}`,
 };
 
 export type FormField
@@ -53,7 +62,7 @@ export function initTUI(): TUI {
         height: 3,
         border: 'line',
         tags: true,
-        style: { border: { fg: 214 }, fg: 214 },
+        style: { border: { fg: palette.chrome }, fg: palette.lime },
         padding: { left: 1, right: 1 },
     });
 
@@ -69,7 +78,7 @@ export function initTUI(): TUI {
         scrollOnInput: true,
         mouse: true,
         keys: true,
-        style: { border: { fg: 214 } },
+        style: { border: { fg: palette.chrome } },
         padding: { left: 1, right: 1 },
     });
 
@@ -83,7 +92,7 @@ export function initTUI(): TUI {
         tags: true,
         wrap: false,
         scrollable: false,
-        style: { border: { fg: 214 }, fg: 214 },
+        style: { border: { fg: palette.chrome }, fg: palette.lime },
         padding: { left: 1, right: 1 },
     });
 
@@ -92,7 +101,7 @@ export function initTUI(): TUI {
     screen.key(['escape'], dismissForm);
 
     let panelOverride: string | null = null;
-    const matrix = createMatrix();
+    const matrix = createMatrix(palette.limeBright);
     function renderPanel() {
         const w = (panel.width as number) - (panel.iwidth as number);
         const h = (panel.height as number) - (panel.iheight as number);
@@ -191,10 +200,10 @@ export function initTUI(): TUI {
         keys: true,
         autoCommandKeys: false,
         style: {
-            bg: '#ffa500',
-            item: { fg: 'black', bg: '#ffa500' },
-            selected: { fg: '#ffa500', bg: 'black' },
-            prefix: { fg: 'black', bg: '#ffa500', bold: true },
+            bg: palette.chrome,
+            item: { fg: 'black', bg: palette.chrome },
+            selected: { fg: palette.lime, bg: 'black' },
+            prefix: { fg: 'black', bg: palette.chrome, bold: true },
         },
         commands: {
             clear: { keys: ['f2'], callback: clear },
@@ -231,7 +240,7 @@ export function initTUI(): TUI {
                 mouse: true,
                 label: ` ${title} `,
                 tags: true,
-                style: { border: { fg: '#ffa500' }, label: { fg: '#ffa500' } },
+                style: { border: { fg: palette.lime }, label: { fg: palette.lime } },
                 padding: { left: 1, right: 1 },
             });
 
@@ -255,7 +264,7 @@ export function initTUI(): TUI {
             const inputs: (TextInput | ChoiceInput)[] = [];
 
             const renderChoice = (label: string, selected: boolean): string =>
-                selected ? `{#ffa500-fg}[${label}]{/}` : ` ${label} `;
+                selected ? `{${palette.lime}-fg}[${label}]{/}` : ` ${label} `;
             const renderChoiceRow = (choice: ChoiceInput) => {
                 choice.buttons.forEach((btn, j) => {
                     btn.setContent(renderChoice(choice.options[j].label, choice.selected === j));
@@ -271,6 +280,7 @@ export function initTUI(): TUI {
                     height: 1,
                     tags: true,
                     content: header,
+                    style: { fg: palette.lime },
                 });
             }
 
@@ -283,6 +293,7 @@ export function initTUI(): TUI {
                     height: 1,
                     tags: true,
                     content: f.label,
+                    style: { fg: palette.lime },
                 });
                 if (f.type === 'text') {
                     const box = blessed.textbox({
@@ -295,7 +306,7 @@ export function initTUI(): TUI {
                         keys: true,
                         mouse: true,
                         name: f.name,
-                        style: { fg: 'white', bg: 'black', focus: { bg: '#333333' } },
+                        style: { fg: palette.limeBright, bg: 'black', focus: { bg: palette.focusBg } },
                     });
                     inputs.push({ kind: 'text', name: f.name, box });
                 } else {
@@ -317,7 +328,7 @@ export function initTUI(): TUI {
                             mouse: true,
                             clickable: true,
                             content: renderChoice(opt.label, choice.selected === j),
-                            style: { fg: 'white' },
+                            style: { fg: palette.limeBright },
                         });
                         btn.on('click', () => {
                             choice.selected = j;
@@ -338,7 +349,7 @@ export function initTUI(): TUI {
                 right: 0,
                 height: 1,
                 tags: true,
-                content: '{#888888-fg}enter: next field   ← →: choose   enter on last: submit{/}',
+                content: `{${palette.dim}-fg}enter: next field   ← →: choose   enter on last: submit{/}`,
             });
 
             function submit() {

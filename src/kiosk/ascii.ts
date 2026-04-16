@@ -59,7 +59,7 @@ function newColumn(height: number, fresh: boolean): Column {
     };
 }
 
-export function createMatrix(): (width: number, height: number, overlay?: string) => string {
+export function createMatrix(overlayColor: string): (width: number, height: number, overlay?: string) => string {
     let cols: Column[] = [];
     let buf: string[][] = [];
     let lastW = 0;
@@ -125,7 +125,7 @@ export function createMatrix(): (width: number, height: number, overlay?: string
                     const x = startX + j;
                     if (x < 0 || x >= width) continue;
                     const ch = line[j];
-                    grid[row][x] = { ch, color: ch === ' ' ? '' : '#aaffaa' };
+                    grid[row][x] = { ch, color: ch === ' ' ? '' : overlayColor };
                 }
             }
         }
