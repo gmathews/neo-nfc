@@ -206,8 +206,8 @@ export function initTUI(): TUI {
             prefix: { fg: 'black', bg: palette.chrome, bold: true },
         },
         commands: {
-            clear: { keys: ['f2'], callback: clear },
-            quit: { keys: ['f10'], callback: () => process.exit(0) },
+            clear: { keys: ['C-d'], callback: clear },
+            quit: { keys: ['C-c'], callback: () => process.exit(0) },
         },
     });
 
