@@ -46,6 +46,81 @@ function wrapLine(text: string, width: number): string[] {
     return out;
 }
 
+const GLITCH_CHARS = '▓▒░█▀▄◆◇⚠!@#$%^&*?/\\~';
+function glitchify(text: string, intensity: number): string {
+    if (intensity <= 0) return text;
+    let out = '';
+    for (const ch of text) {
+        if (ch === ' ' || ch === '\n') out += ch;
+        else if (Math.random() < intensity) out += GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+        else out += ch;
+    }
+    return out;
+}
+
+export const INFECTION_BOX = { width: 60, height: 14 };
+
+// Two cartoony skull-emoji-shaped skulls: round cranium, tapered jaw, teeth, chin.
+const SKULL_A = [
+    '   ▄▀▀▀▀▀▄   ',
+    '  █ O   O █  ',
+    '  █   ▽   █  ',
+    '  ▀█▄▄▄▄▄█▀  ',
+    '    ║║║║║    ',
+    '     ▀▀▀     ',
+];
+const SKULL_B = [
+    '   ▄▀▀▀▀▀▄   ',
+    '  █ X   X █  ',
+    '  █   △   █  ',
+    '  ▀█▄▄▄▄▄█▀  ',
+    '    ║║║║║    ',
+    '     ▀▀▀     ',
+];
+// Crossed bones under each skull: X shape with knob ends (jolly roger).
+const CROSSBONES = [
+    'o\\         /o',
+    ' \\\\       // ',
+    '   \\\\   //   ',
+    '   //   \\\\   ',
+    ' //       \\\\ ',
+    'o/         \\o',
+];
+const LEFT_COLUMN = [...SKULL_A, ...CROSSBONES];
+const RIGHT_COLUMN = [...SKULL_B, ...CROSSBONES];
+const MIDDLE_WIDTH = 30;
+
+function centerPad(text: string, width: number): string {
+    const left = Math.floor((width - text.length) / 2);
+    const right = width - text.length - left;
+    return ' '.repeat(Math.max(0, left)) + text + ' '.repeat(Math.max(0, right));
+}
+
+export function infectionFrame(counter: number, tick: number): string {
+    const intensity = Math.min(0.55, counter * 0.1);
+    // Pulse: keep the magic string readable most of the time; glitch briefly every cycle.
+    const magicGlitching = tick % 8 < 2;
+    const magicIntensity = magicGlitching ? intensity * 0.6 : 0;
+    const skullIntensity = intensity * 0.3;
+
+    const middleFor = (row: number): string => {
+        if (row === 1) {
+            return `{red-fg}${centerPad(glitchify('░▓█ SYSTEM BREACH █▓░', intensity), MIDDLE_WIDTH)}{/}`;
+        }
+        if (row === 3) {
+            const msg = `>> ${glitchify('infected by r00t k1d', magicIntensity)} <<`;
+            return `{red-fg}${centerPad(msg, MIDDLE_WIDTH)}{/}`;
+        }
+        return ' '.repeat(MIDDLE_WIDTH);
+    };
+
+    return LEFT_COLUMN.map((left, i) => {
+        const a = `{red-fg}${glitchify(left, skullIntensity)}{/}`;
+        const b = `{red-fg}${glitchify(RIGHT_COLUMN[i], skullIntensity)}{/}`;
+        return `${a}${middleFor(i)}${b}`;
+    }).join('\n');
+}
+
 const MATRIX_CHARS = 'ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789+-*<>=#?!$%';
 const randChar = () => MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)];
 

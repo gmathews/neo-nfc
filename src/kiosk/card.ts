@@ -1,7 +1,7 @@
 // NFC card flow: read the card, serve the daily fortune, write a fortune badge back, and collect feedback on removal.
 import { Card, KEY_TYPE_A, Reader } from 'nfc-pcsc';
 import { AuthCardReadWrite } from './AuthCardReadWrite.js';
-import { augmentSplash, horoscopePanel, severedSplash } from './ascii.js';
+import { INFECTION_BOX, augmentSplash, horoscopePanel, infectionFrame, severedSplash } from './ascii.js';
 import { askAndSaveFeedback } from './feedback.js';
 import { getFortune } from './fortunes.js';
 import { hexToAscii } from './hex.js';
@@ -14,6 +14,12 @@ const ACR122U_PREFIX = 'ACS ACR122U';
 const isAcr122u = (reader: Reader): boolean => reader.reader.name.startsWith(ACR122U_PREFIX);
 // Layout: "h3LLraz0r" (9B) + "/" (1B) + secs BE u32 (4B) + "/" (1B) + fortuneId (1B) = 16B
 const FORTUNE_BLOCK = 120; // sector 30, block 0
+// r00t k1d infection lives in sector 32 (4k cards only):
+//   blocks 128-129: ascii "infected by r00t k1d" (20B, padded)
+//   block 130: single-byte infection counter (1..5)
+const ROOTKID_INFECTION_BLOCK = 128;
+const ROOTKID_MAGIC = 'infected by r00t k1d';
+const ROOTKID_MAX_COUNTER = 5;
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -36,6 +42,25 @@ function encodeFortuneBadge(fortuneId: number): string {
     buf.write('/', 14, 'ascii');
     buf.writeUInt8(fortuneId, 15);
     return buf.toString('hex');
+}
+
+function detectRootKidInfection(allData: string[]): { counter: number } | undefined {
+    // Only 4k cards reach block 128 — 1k/Ultralight fall through here.
+    if (allData.length <= ROOTKID_INFECTION_BLOCK + 2) return;
+    const magicHex = Buffer.from(ROOTKID_MAGIC, 'ascii').toString('hex');
+    const b0 = allData[ROOTKID_INFECTION_BLOCK];
+    const b1 = allData[ROOTKID_INFECTION_BLOCK + 1];
+    const counterBlock = allData[ROOTKID_INFECTION_BLOCK + 2];
+    if (!(b0 + b1).toLowerCase().startsWith(magicHex)) return;
+    const counter = parseInt(counterBlock.slice(0, 2), 16);
+    if (!counter) return;
+    return { counter: Math.min(counter, ROOTKID_MAX_COUNTER) };
+}
+
+function showInfection(tui: TUI, counter: number): void {
+    // counter 1 → ~3s; counter 5 → ~7s
+    const durationMs = 2000 + counter * 1000;
+    tui.showModal(tick => infectionFrame(counter, tick), durationMs, INFECTION_BOX.width, INFECTION_BOX.height);
 }
 
 async function writeFortuneBadge(reader: Reader, card: Card, fortuneId: number): Promise<void> {
@@ -87,6 +112,8 @@ async function readAndStoreCard(tui: TUI, reader: Reader, card: Card): Promise<v
         spinner.stop();
     }
     await db.insert(cardData).values({ uid: card.uid, data: allData.join('') });
+    const infection = detectRootKidInfection(allData);
+    if (infection) showInfection(tui, infection.counter);
 }
 
 export interface CardHandlers {

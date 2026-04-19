@@ -42,6 +42,7 @@ export interface TUI {
     spinner: (render: (frame: string, content: string) => string) => SpinnerHandle;
     clear: () => void;
     setBanner: (line1: string, line2?: string) => void;
+    showModal: (getFrame: (tick: number) => string, durationMs: number, width: number, height: number) => void;
     setPanel: (content: string) => void;
     clearPanel: () => void;
     askForm: (title: string, fields: FormField[], header?: string) => Promise<Record<string, string> | null>;
@@ -213,6 +214,15 @@ export function initTUI(): TUI {
 
     screen.render();
 
+    let activeModal: { timer: NodeJS.Timeout; timeout: NodeJS.Timeout; box: blessed.Widgets.BoxElement } | null = null;
+    function dismissModal() {
+        if (!activeModal) return;
+        clearInterval(activeModal.timer);
+        clearTimeout(activeModal.timeout);
+        activeModal.box.destroy();
+        activeModal = null;
+    }
+
     return {
         log: logFn,
         logLine: logLineFn,
@@ -223,6 +233,37 @@ export function initTUI(): TUI {
         setBanner: (l1, l2) => {
             banner.setContent(l2 ? `${l1}\n${l2}` : l1);
             render();
+        },
+        showModal: (getFrame, durationMs, width, height) => {
+            dismissModal();
+            // Center on the log window (banner occupies 3 rows on top, listbar 1 row on bottom).
+            const screenHeight = screen.height as number;
+            const top = 3 + Math.max(0, Math.floor((screenHeight - 4 - height) / 2));
+            const left = Math.max(0, Math.floor((LOG_WIDTH - width) / 2));
+            const box = blessed.box({
+                parent: screen,
+                top,
+                left,
+                width,
+                height,
+                border: 'line',
+                tags: true,
+                align: 'center',
+                style: { border: { fg: 'red' }, fg: palette.lime, bg: 'black' },
+                padding: { left: 1, right: 1 },
+            });
+            let tick = 0;
+            const redraw = () => {
+                box.setContent(getFrame(tick));
+                render();
+            };
+            redraw();
+            const timer = setInterval(() => {
+                tick++;
+                redraw();
+            }, 90);
+            const timeout = setTimeout(dismissModal, durationMs);
+            activeModal = { timer, timeout, box };
         },
         dismissForm,
         askForm: (title, fields, header) => new Promise((resolve) => {
@@ -404,6 +445,7 @@ export function initTUI(): TUI {
         }),
         destroy: () => {
             clearInterval(panelTimer);
+            dismissModal();
             screen.destroy();
         },
     };
