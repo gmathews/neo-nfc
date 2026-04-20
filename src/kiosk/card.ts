@@ -1,7 +1,7 @@
 // NFC card flow: read the card, serve the daily fortune, write a fortune badge back, and collect feedback on removal.
 import { Card, KEY_TYPE_A, Reader } from 'nfc-pcsc';
 import { AuthCardReadWrite } from './AuthCardReadWrite.js';
-import { INFECTION_BOX, augmentSplash, horoscopePanel, infectionFrame, severedSplash } from './ascii.js';
+import { augmentSplash, horoscopePanel, infectionFrame, severedSplash } from './ascii.js';
 import { askAndSaveFeedback } from './feedback.js';
 import { getFortune } from './fortunes.js';
 import { hexToAscii } from './hex.js';
@@ -31,8 +31,10 @@ function getMifareRW(reader: Reader, card: Card): { rw: AuthCardReadWrite; numOf
     const key = 'FFFFFFFFFFFF';
     const keyType = KEY_TYPE_A;
     const keys = Array.from({ length: mifareCheck.numOfSectors + 1 }, () => ({ keyType, key }));
-    return { rw: new AuthCardReadWrite(reader, keys, mifareCheck.blockSize, mifareCheck.numOfBlocks),
-        numOfSectors: mifareCheck.numOfSectors };
+    return {
+        rw: new AuthCardReadWrite(reader, keys, mifareCheck.blockSize, mifareCheck.numOfBlocks),
+        numOfSectors: mifareCheck.numOfSectors,
+    };
 }
 
 function encodeFortuneBadge(fortuneId: number): string {
@@ -58,9 +60,9 @@ function detectRootKidInfection(allData: string[]): { counter: number } | undefi
 }
 
 function showInfection(tui: TUI, counter: number): void {
-    // counter 1 → ~3s; counter 5 → ~7s
-    const durationMs = 2000 + counter * 1000;
-    tui.showModal(tick => infectionFrame(counter, tick), durationMs, INFECTION_BOX.width, INFECTION_BOX.height);
+    // DEBUG: stays up until card is removed.
+    // 2000 + counter * 1000
+    tui.showModal(tick => infectionFrame(counter, tick), 10 * 60 * 1000);
 }
 
 async function writeFortuneBadge(reader: Reader, card: Card, fortuneId: number): Promise<void> {
@@ -160,6 +162,7 @@ export function createCardHandlers(tui: TUI): CardHandlers {
     }
 
     async function handleCardOff(reader: Reader, card: Card): Promise<void> {
+        tui.dismissModal();
         tui.log(t.lime(severedSplash(card.uid)));
         const shown = lastFortune.get(card.uid);
         if (shown) {

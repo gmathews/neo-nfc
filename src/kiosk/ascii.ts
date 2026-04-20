@@ -58,67 +58,44 @@ function glitchify(text: string, intensity: number): string {
     return out;
 }
 
-export const INFECTION_BOX = { width: 60, height: 14 };
-
-// Two cartoony skull-emoji-shaped skulls: round cranium, tapered jaw, teeth, chin.
-const SKULL_A = [
-    '   ▄▀▀▀▀▀▄   ',
-    '  █ O   O █  ',
-    '  █   ▽   █  ',
-    '  ▀█▄▄▄▄▄█▀  ',
-    '    ║║║║║    ',
-    '     ▀▀▀     ',
+// NFO-style skull and crossbones, classic warez scene aesthetic.
+const SKULL = [
+    '   .oOoOOOOOOOo                                         .oOOOOOo',
+    '   Ob.OOOOOOOOOoOOOo.      oOOo.                      .adOOOOOOOO',
+    '   OboO"""""""""""OoOOo. .oOOOOOo.    OOOo.oOOOOOo.."""""""""\'OO\'',
+    '   OOP.oOOOOOOOOOOO "POOOOOOOOOOOo.   `OOOOOOOOOOP,OOOOOOOOOOOB\'',
+    '   `O\'OOOO\'     `OOOOo"OOOOOOOOOOO` .adOOOOOOOOO"oOOO\'    `OOOOo',
+    '   .OOOO\'            `OOOOOOOOOOOOOOOOOOOOOOOOOO\'            `OO',
+    '   OOOOO      r00t       \'"OOOOOOOOOOOOOOOO"`      k1d       oOO',
+    '  oOOOOOba.                .adOOOOOOOOOOba               .adOOOOo.',
+    'oOOOOOOOOOOOOOba.    .adOOOOOOOOOO@^OOOOOOOba.     .adOOOOOOOOOOOO',
+    'OOOOOOOOOOOOOOOOO.OOOOOOOOOOOOOO"`96\'"OOOOOOOOOOOOO.OOOOOOOOOOOOOO',
+    '"OOOO"       "YOoOOOOOOOOOODOO"`  ..  \'"OOOOOOOOOOOOoOY"     "OOO"',
+    '   Y           \'OOOOOOOOOOOOOO: .oOOo. :OOOOOOOOOOO?\'         :`',
+    '   :            .oO%OOOOOOOOOOo.OOOOOO.oOOOOOOOOOOOO?         .',
+    '   .            oOOP"%OOOOOOOOoOOOOOOO?oOOOOO?OOOO"OOo',
+    '                \'%o  OO OO"%OOOO%"%OOOOO"OOOOOO"OOO\':',
+    '                     `$"  `OOOO\' `O"Y \' `OOOO\'  o             .',
+    '   .                  .     OP"     :    : o     .',
+    '                            :       .',
 ];
-const SKULL_B = [
-    '   ▄▀▀▀▀▀▄   ',
-    '  █ X   X █  ',
-    '  █   △   █  ',
-    '  ▀█▄▄▄▄▄█▀  ',
-    '    ║║║║║    ',
-    '     ▀▀▀     ',
-];
-// Crossed bones under each skull: X shape with knob ends (jolly roger).
-const CROSSBONES = [
-    'o\\         /o',
-    ' \\\\       // ',
-    '   \\\\   //   ',
-    '   //   \\\\   ',
-    ' //       \\\\ ',
-    'o/         \\o',
-];
-const LEFT_COLUMN = [...SKULL_A, ...CROSSBONES];
-const RIGHT_COLUMN = [...SKULL_B, ...CROSSBONES];
-const MIDDLE_WIDTH = 30;
-
-function centerPad(text: string, width: number): string {
-    const left = Math.floor((width - text.length) / 2);
-    const right = width - text.length - left;
-    return ' '.repeat(Math.max(0, left)) + text + ' '.repeat(Math.max(0, right));
-}
 
 export function infectionFrame(counter: number, tick: number): string {
     const intensity = Math.min(0.55, counter * 0.1);
+    // Brief blackout each cycle — higher counter = more frequent blinks.
+    const cycleLen = Math.max(4, 12 - counter * 2);
+    if (tick % cycleLen === 0) return '';
+
     // Pulse: keep the magic string readable most of the time; glitch briefly every cycle.
     const magicGlitching = tick % 8 < 2;
     const magicIntensity = magicGlitching ? intensity * 0.6 : 0;
     const skullIntensity = intensity * 0.3;
 
-    const middleFor = (row: number): string => {
-        if (row === 1) {
-            return `{red-fg}${centerPad(glitchify('░▓█ SYSTEM BREACH █▓░', intensity), MIDDLE_WIDTH)}{/}`;
-        }
-        if (row === 3) {
-            const msg = `>> ${glitchify('infected by r00t k1d', magicIntensity)} <<`;
-            return `{red-fg}${centerPad(msg, MIDDLE_WIDTH)}{/}`;
-        }
-        return ' '.repeat(MIDDLE_WIDTH);
-    };
-
-    return LEFT_COLUMN.map((left, i) => {
-        const a = `{red-fg}${glitchify(left, skullIntensity)}{/}`;
-        const b = `{red-fg}${glitchify(RIGHT_COLUMN[i], skullIntensity)}{/}`;
-        return `${a}${middleFor(i)}${b}`;
-    }).join('\n');
+    // Pad every row to the same width so blessed's per-line centering keeps columns aligned.
+    const w = Math.max(...SKULL.map(l => l.length));
+    const skullLines = SKULL.map(row => `{red-fg}${glitchify(row.padEnd(w, ' '), skullIntensity)}{/}`);
+    const msg = `>> ${glitchify('infected by r00t k1d', magicIntensity)} <<`;
+    return [...skullLines, '', `{red-fg}${msg}{/}`].join('\n');
 }
 
 const MATRIX_CHARS = 'ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789+-*<>=#?!$%';

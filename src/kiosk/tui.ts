@@ -42,7 +42,8 @@ export interface TUI {
     spinner: (render: (frame: string, content: string) => string) => SpinnerHandle;
     clear: () => void;
     setBanner: (line1: string, line2?: string) => void;
-    showModal: (getFrame: (tick: number) => string, durationMs: number, width: number, height: number) => void;
+    showModal: (getFrame: (tick: number) => string, durationMs: number) => void;
+    dismissModal: () => void;
     setPanel: (content: string) => void;
     clearPanel: () => void;
     askForm: (title: string, fields: FormField[], header?: string) => Promise<Record<string, string> | null>;
@@ -234,21 +235,19 @@ export function initTUI(): TUI {
             banner.setContent(l2 ? `${l1}\n${l2}` : l1);
             render();
         },
-        showModal: (getFrame, durationMs, width, height) => {
+        showModal: (getFrame, durationMs) => {
             dismissModal();
-            // Center on the log window (banner occupies 3 rows on top, listbar 1 row on bottom).
-            const screenHeight = screen.height as number;
-            const top = 3 + Math.max(0, Math.floor((screenHeight - 4 - height) / 2));
-            const left = Math.max(0, Math.floor((LOG_WIDTH - width) / 2));
+            // Overlay the entire log panel (below banner, above listbar).
             const box = blessed.box({
                 parent: screen,
-                top,
-                left,
-                width,
-                height,
+                top: 3,
+                left: 0,
+                width: LOG_WIDTH,
+                bottom: 1,
                 border: 'line',
                 tags: true,
                 align: 'center',
+                valign: 'middle',
                 style: { border: { fg: 'red' }, fg: palette.lime, bg: 'black' },
                 padding: { left: 1, right: 1 },
             });
@@ -265,6 +264,7 @@ export function initTUI(): TUI {
             const timeout = setTimeout(dismissModal, durationMs);
             activeModal = { timer, timeout, box };
         },
+        dismissModal,
         dismissForm,
         askForm: (title, fields, header) => new Promise((resolve) => {
             const rowsPerField = 3; // label + widget + spacer
