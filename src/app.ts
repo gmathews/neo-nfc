@@ -5,7 +5,6 @@ import { initTUI, tag as t } from 'src/kiosk/tui.js';
 import logger from 'src/lib/logger.js';
 import routes from 'src/lib/routes.js';
 
-// TODO: fortunes based on neosites
 // TODO: break usb connector and have wires from inside laptop back
 
 logger.info('starting fastify');
@@ -24,7 +23,7 @@ const nfc = new NFC();
 const { handleCard, handleCardOff } = createCardHandlers(tui);
 
 nfc.on('reader', (reader) => {
-    tui.log(t.lime(`reader connected: *${reader.reader.name}*`));
+    tui.log(t.lime(`reader connected: ${reader.reader.name.substring(0, 40)}`));
 
     reader.on('card', (card) => {
         void handleCard(reader, card);

@@ -103,8 +103,8 @@ const randChar = () => MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.leng
 
 interface Stream { head: number; speed: number; length: number }
 
-const MAX_STREAMS_PER_COL = 2;
-const SPAWN_PROB = 0.03;
+const MAX_STREAMS_PER_COL = 3;
+const SPAWN_PROB = 0.10;
 
 function newStream(height: number, fresh: boolean): Stream {
     return {

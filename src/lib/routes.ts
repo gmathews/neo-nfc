@@ -30,7 +30,7 @@ const routes: FastifyPluginAsync = async (app) => {
             },
         },
     });
-    await app.register(swaggerUi, { routePrefix: '/docs' });
+    await app.register(swaggerUi, { routePrefix: '/documentation' });
 
     app.get('/fortune', { schema: getFortunesSchema }, getFortunes);
     app.get('/fortune/:id', { schema: getFortuneSchema }, getFortune);

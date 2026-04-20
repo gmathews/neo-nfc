@@ -60,9 +60,7 @@ function detectRootKidInfection(allData: string[]): { counter: number } | undefi
 }
 
 function showInfection(tui: TUI, counter: number): void {
-    // DEBUG: stays up until card is removed.
-    // 2000 + counter * 1000
-    tui.showModal(tick => infectionFrame(counter, tick), 10 * 60 * 1000);
+    tui.showModal(tick => infectionFrame(counter, tick), 2000 + counter * 1000);
 }
 
 async function writeFortuneBadge(reader: Reader, card: Card, fortuneId: number): Promise<void> {

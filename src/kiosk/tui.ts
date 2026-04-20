@@ -291,6 +291,7 @@ export function initTUI(): TUI {
                 finished = true;
                 if (activeForm === myForm) activeForm = null;
                 form.destroy();
+                screen.program.hideCursor();
                 render();
                 resolve(values);
             }
