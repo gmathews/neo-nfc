@@ -101,18 +101,21 @@ export function infectionFrame(counter: number, tick: number): string {
 const MATRIX_CHARS = 'ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789+-*<>=#?!$%';
 const randChar = () => MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)];
 
-interface Column { head: number; speed: number; length: number }
+interface Stream { head: number; speed: number; length: number }
 
-function newColumn(height: number, fresh: boolean): Column {
+const MAX_STREAMS_PER_COL = 2;
+const SPAWN_PROB = 0.03;
+
+function newStream(height: number, fresh: boolean): Stream {
     return {
-        head: fresh ? -Math.random() * height : Math.random() * height - height * 0.3,
+        head: fresh ? -Math.random() * height * 0.3 : Math.random() * height - height * 0.3,
         speed: 0.25 + Math.random() * 0.85,
         length: 6 + Math.floor(Math.random() * 14),
     };
 }
 
 export function createMatrix(overlayColor: string): (width: number, height: number, overlay?: string) => string {
-    let cols: Column[] = [];
+    let cols: Stream[][] = [];
     let buf: string[][] = [];
     let lastW = 0;
     let lastH = 0;
@@ -120,22 +123,25 @@ export function createMatrix(overlayColor: string): (width: number, height: numb
     return (width: number, height: number, overlay?: string): string => {
         if (width <= 0 || height <= 0) return '';
         if (width !== lastW || height !== lastH) {
-            cols = Array.from({ length: width }, () => newColumn(height, false));
+            cols = Array.from({ length: width }, () => [newStream(height, false)]);
             buf = Array.from({ length: height }, () => Array.from({ length: width }, () => ' '));
             lastW = width;
             lastH = height;
         }
 
         for (let x = 0; x < width; x++) {
-            const c = cols[x];
-            const prev = Math.floor(c.head);
-            c.head += c.speed;
-            const cur = Math.floor(c.head);
-            for (let y = Math.max(0, prev + 1); y <= cur && y < height; y++) {
-                buf[y][x] = randChar();
+            const streams = cols[x];
+            for (const s of streams) {
+                const prev = Math.floor(s.head);
+                s.head += s.speed;
+                const cur = Math.floor(s.head);
+                for (let y = Math.max(0, prev + 1); y <= cur && y < height; y++) {
+                    buf[y][x] = randChar();
+                }
             }
-            if (c.head - c.length > height) {
-                cols[x] = newColumn(height, true);
+            cols[x] = streams.filter(s => s.head - s.length <= height);
+            if (cols[x].length < MAX_STREAMS_PER_COL && Math.random() < SPAWN_PROB) {
+                cols[x].push(newStream(height, true));
             }
         }
 
@@ -143,13 +149,20 @@ export function createMatrix(overlayColor: string): (width: number, height: numb
         for (let y = 0; y < height; y++) {
             const row: { ch: string; color: string }[] = [];
             for (let x = 0; x < width; x++) {
-                const c = cols[x];
-                const d = c.head - y;
-                if (d >= 0 && d < c.length) {
-                    if (d < 1) {
+                let bestD = Infinity;
+                let bestLen = 0;
+                for (const s of cols[x]) {
+                    const d = s.head - y;
+                    if (d >= 0 && d < s.length && d < bestD) {
+                        bestD = d;
+                        bestLen = s.length;
+                    }
+                }
+                if (bestLen > 0) {
+                    if (bestD < 1) {
                         row.push({ ch: randChar(), color: '#e0ffe0' });
                     } else {
-                        const fade = 1 - d / c.length;
+                        const fade = 1 - bestD / bestLen;
                         const g = Math.max(40, Math.floor(40 + fade * 210));
                         row.push({ ch: buf[y][x], color: `#00${g.toString(16).padStart(2, '0')}00` });
                     }
