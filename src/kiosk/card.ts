@@ -14,11 +14,11 @@ const ACR122U_PREFIX = 'ACS ACR122U';
 const isAcr122u = (reader: Reader): boolean => reader.reader.name.startsWith(ACR122U_PREFIX);
 // Layout: "h3LLraz0r" (9B) + "/" (1B) + secs BE u32 (4B) + "/" (1B) + fortuneId (1B) = 16B
 const FORTUNE_BLOCK = 120; // sector 30, block 0
-// r00t k1d infection lives in sector 32 (4k cards only):
-//   blocks 128-129: ascii "infected by r00t k1d" (20B, padded)
-//   block 130: single-byte infection counter (1..5)
-const ROOTKID_INFECTION_BLOCK = 128;
-const ROOTKID_MAGIC = 'infected by r00t k1d';
+// r00t k1d infection lives in sector 31 (4k cards only):
+//   blocks 124: ascii "INFECTED r00tk1d" (16B)
+//   block 126: single-byte infection counter (1..5)
+const ROOTKID_INFECTION_BLOCK = 124;
+const ROOTKID_MAGIC = 'INFECTED r00tk1d';
 const ROOTKID_MAX_COUNTER = 5;
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));

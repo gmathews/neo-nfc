@@ -3,6 +3,7 @@ import { NFC } from 'nfc-pcsc';
 import { createCardHandlers } from 'src/kiosk/card.js';
 import { initTUI, tag as t } from 'src/kiosk/tui.js';
 import logger from 'src/lib/logger.js';
+import { clearCurrentCard, setCurrentCard } from 'src/lib/readerState.js';
 import routes from 'src/lib/routes.js';
 
 // TODO: break usb connector and have wires from inside laptop back
@@ -26,9 +27,11 @@ nfc.on('reader', (reader) => {
     tui.log(t.lime(`reader connected: ${reader.reader.name.substring(0, 40)}`));
 
     reader.on('card', (card) => {
+        setCurrentCard(reader, card);
         void handleCard(reader, card);
     });
     reader.on('card.off', (card) => {
+        clearCurrentCard(card);
         void handleCardOff(reader, card);
     });
 

@@ -11,6 +11,14 @@ import {
     putFortuneSchema,
 } from 'src/lib/routes/fortune.js';
 import {
+    getReaderStatus,
+    getReaderStatusSchema,
+    postReaderBlock,
+    postReaderBlockSchema,
+    postReaderWrite,
+    postReaderWriteSchema,
+} from 'src/lib/routes/reader.js';
+import {
     getTerminal418,
     getTerminal418Schema,
 } from 'src/lib/routes/terminal418.js';
@@ -40,6 +48,10 @@ const routes: FastifyPluginAsync = async (app) => {
     app.get('/user/:uid', { schema: getUserSchema }, getUser);
 
     app.get('/terminal418', { schema: getTerminal418Schema }, getTerminal418);
+
+    app.get('/reader/status', { schema: getReaderStatusSchema }, getReaderStatus);
+    app.post('/reader/write', { schema: postReaderWriteSchema }, postReaderWrite);
+    app.post('/reader/block', { schema: postReaderBlockSchema }, postReaderBlock);
 };
 
 export default routes;

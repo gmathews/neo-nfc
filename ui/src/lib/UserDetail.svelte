@@ -29,12 +29,32 @@
     text: string
   }
 
+  interface ReaderStatus {
+    present: boolean
+    uid: string | null
+    readerName: string | null
+  }
+
+  interface WriteResult {
+    uid: string
+    written: number
+    skipped: number
+  }
+
   let { uid }: { uid: string } = $props()
   let data: UserData | null = $state(null)
   let error: string | null = $state(null)
   let fortuneTexts: Map<string, string> = $state(new Map())
   let copiedIdx: number | null = $state(null)
   let viewMode: 'hex' | 'ascii' = $state('hex')
+  let reader: ReaderStatus = $state({ present: false, uid: null, readerName: null })
+  let writing: number | null = $state(null)
+  let writeStatus: { idx: number; text: string; ok: boolean } | null = $state(null)
+  let prevReaderUid: string | null = null
+  let editingBlock: { eventIdx: number; block: number } | null = $state(null)
+  let editValue = $state('')
+  let savingBlock = $state(false)
+  let blockStatus: { eventIdx: number; block: number; ok: boolean; text: string } | null = $state(null)
 
   function hexToAscii(hex: string): string {
     let out = ''
@@ -49,26 +69,45 @@
     return mode === 'ascii' ? hexToAscii(block) : block
   }
 
-  function formatCardData(hex: string, mode: 'hex' | 'ascii'): string {
-    const blockSize = 32 // 16 bytes = 32 hex chars
+  type BlockEntry =
+    | { kind: 'sector'; n: number }
+    | { kind: 'block'; block: number; data: string; isTrailer: boolean; editable: boolean }
+
+  // Sector trailer detection for MIFARE Classic 1k/4k:
+  //   low 32 sectors × 4 blocks, then 8 sectors × 16 blocks starting at block 128.
+  function isTrailerBlock(block: number): boolean {
+    const lowSectorBlocks = 32 * 4
+    if (block < lowSectorBlocks) return block % 4 === 3
+    return (block - lowSectorBlocks) % 16 === 15
+  }
+
+  function structureCardData(hex: string): BlockEntry[] {
+    const blockSize = 32
     const blocks: string[] = []
-    for (let i = 0; i < hex.length; i += blockSize) {
-      blocks.push(hex.slice(i, i + blockSize))
-    }
-    // Group into sectors of 4 blocks, skip sectors where data blocks (first 3) are all zeros
-    const lines: string[] = []
+    for (let i = 0; i < hex.length; i += blockSize) blocks.push(hex.slice(i, i + blockSize))
+    const entries: BlockEntry[] = []
     for (let s = 0; s < blocks.length; s += 4) {
       const dataBlocks = blocks.slice(s, s + 3)
       const trailer = blocks[s + 3]
       const allZero = dataBlocks.every(b => /^0*$/.test(b))
       if (allZero) continue
-      lines.push(`sector ${s / 4}`)
+      entries.push({ kind: 'sector', n: s / 4 })
       for (let j = 0; j < dataBlocks.length; j++) {
-        if (dataBlocks[j]) lines.push(`  ${String(s + j).padStart(3, '0')}  ${formatBlock(dataBlocks[j], mode)}`)
+        if (!dataBlocks[j]) continue
+        const block = s + j
+        entries.push({
+          kind: 'block',
+          block,
+          data: dataBlocks[j],
+          isTrailer: false,
+          editable: block !== 0 && !isTrailerBlock(block),
+        })
       }
-      if (trailer) lines.push(`  ${String(s + 3).padStart(3, '0')}  ${formatBlock(trailer, mode)}  [trailer]`)
+      if (trailer) {
+        entries.push({ kind: 'block', block: s + 3, data: trailer, isTrailer: true, editable: false })
+      }
     }
-    return lines.join('\n') || '(empty)'
+    return entries
   }
 
   async function fetchUser(cursor?: string) {
@@ -117,8 +156,92 @@
     setTimeout(() => { if (copiedIdx === idx) copiedIdx = null }, 1500)
   }
 
+  async function fetchReaderStatus() {
+    try {
+      const res = await fetch('/api/reader/status')
+      if (!res.ok) return
+      const next: ReaderStatus = await res.json()
+      // When this user's band leaves the reader, the scan is already saved
+      // to the DB — pull the updated event list.
+      if (prevReaderUid === uid && next.uid !== uid) fetchUser()
+      prevReaderUid = next.uid
+      reader = next
+    } catch {
+      // ignore — kiosk process may not be running
+    }
+  }
+
+  function startEditBlock(eventIdx: number, block: number, data: string) {
+    editingBlock = { eventIdx, block }
+    editValue = data
+    blockStatus = null
+  }
+
+  function cancelEditBlock() {
+    editingBlock = null
+    editValue = ''
+  }
+
+  async function saveBlock(eventIdx: number) {
+    if (!editingBlock || savingBlock) return
+    const { block } = editingBlock
+    if (!/^[0-9a-fA-F]{32}$/.test(editValue)) {
+      blockStatus = { eventIdx, block, ok: false, text: 'must be 32 hex chars' }
+      return
+    }
+    savingBlock = true
+    try {
+      const res = await fetch('/api/reader/block', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ block, data: editValue }),
+      })
+      const body = await res.json()
+      if (res.ok) {
+        blockStatus = { eventIdx, block, ok: true, text: `wrote to ${body.uid}` }
+        editingBlock = null
+      } else {
+        blockStatus = { eventIdx, block, ok: false, text: body.error ?? `error ${res.status}` }
+      }
+    } catch (err) {
+      blockStatus = { eventIdx, block, ok: false, text: String(err) }
+    } finally {
+      savingBlock = false
+      const snap = blockStatus
+      if (snap?.ok) setTimeout(() => { if (blockStatus === snap) blockStatus = null }, 4000)
+    }
+  }
+
+  async function writeToBand(scanData: string, idx: number) {
+    if (writing !== null) return
+    writing = idx
+    writeStatus = null
+    try {
+      const res = await fetch('/api/reader/write', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ data: scanData }),
+      })
+      const body = await res.json()
+      if (res.ok) {
+        const r = body as WriteResult
+        writeStatus = { idx, text: `wrote ${r.written} blocks (skipped ${r.skipped}) to ${r.uid}`, ok: true }
+      } else {
+        writeStatus = { idx, text: body.error ?? `error ${res.status}`, ok: false }
+      }
+    } catch (err) {
+      writeStatus = { idx, text: String(err), ok: false }
+    } finally {
+      writing = null
+      setTimeout(() => { if (writeStatus?.idx === idx) writeStatus = null }, 4000)
+    }
+  }
+
   $effect(() => {
     fetchUser()
+    fetchReaderStatus()
+    const interval = setInterval(fetchReaderStatus, 2000)
+    return () => clearInterval(interval)
   })
 
   function reactionLabel(r: number): string {
@@ -163,7 +286,28 @@
         <button class="copy-btn" onclick={() => copyData(data!.lastData!.data, -1)}>
           {copiedIdx === -1 ? 'copied' : 'copy'}
         </button>
+        <button
+          class="write-btn"
+          disabled={!reader.present || writing !== null}
+          onclick={() => writeToBand(data!.lastData!.data, -1)}
+          title={reader.present ? `write to ${reader.uid}` : 'no card on reader'}
+        >
+          {writing === -1 ? 'writing...' : 'write to band'}
+        </button>
+        {#if writeStatus?.idx === -1}
+          <span class="write-status" class:err={!writeStatus.ok}>{writeStatus.text}</span>
+        {/if}
       </div>
+    {/if}
+  </div>
+
+  <div class="reader-status">
+    {#if reader.present}
+      <span class="dot on"></span>
+      <span>card on reader: <span class="uid">{reader.uid}</span></span>
+    {:else}
+      <span class="dot off"></span>
+      <span class="muted">no card on reader</span>
     {/if}
   </div>
 
@@ -190,6 +334,17 @@
               <button class="copy-btn" onclick={() => copyData((event as CardReadEvent).data, i)}>
                 {copiedIdx === i ? 'copied' : 'copy'}
               </button>
+              <button
+                class="write-btn"
+                disabled={!reader.present || writing !== null}
+                onclick={() => writeToBand((event as CardReadEvent).data, i)}
+                title={reader.present ? `write to ${reader.uid}` : 'no card on reader'}
+              >
+                {writing === i ? 'writing...' : 'write to band'}
+              </button>
+              {#if writeStatus?.idx === i}
+                <span class="write-status" class:err={!writeStatus.ok}>{writeStatus.text}</span>
+              {/if}
             {/if}
           </div>
           {#if event.type === 'feedback'}
@@ -202,7 +357,49 @@
             {/if}
           {/if}
           {#if event.type === 'card_read'}
-            <pre class="data-dump">{formatCardData(event.data, viewMode)}</pre>
+            {@const entries = structureCardData((event as CardReadEvent).data)}
+            <div class="data-dump">
+              {#each entries as entry}
+                {#if entry.kind === 'sector'}
+                  <div class="sector-label">sector {entry.n}</div>
+                {:else}
+                  <div class="block-row" class:trailer={entry.isTrailer}>
+                    <span class="block-num">{String(entry.block).padStart(3, '0')}</span>
+                    {#if editingBlock && editingBlock.eventIdx === i && editingBlock.block === entry.block}
+                      <input
+                        type="text"
+                        class="block-input"
+                        bind:value={editValue}
+                        maxlength={32}
+                        disabled={savingBlock}
+                        onkeydown={(e: KeyboardEvent) => {
+                          if (e.key === 'Enter') saveBlock(i)
+                          else if (e.key === 'Escape') cancelEditBlock()
+                        }}
+                      />
+                      <button class="copy-btn" disabled={savingBlock} onclick={() => saveBlock(i)}>
+                        {savingBlock ? 'saving...' : 'save'}
+                      </button>
+                      <button class="copy-btn" disabled={savingBlock} onclick={cancelEditBlock}>cancel</button>
+                    {:else}
+                      <span class="block-data">{formatBlock(entry.data, viewMode)}</span>
+                      {#if entry.isTrailer}<span class="trailer-tag">[trailer]</span>{/if}
+                      {#if entry.editable && viewMode === 'hex' && reader.present}
+                        <button
+                          class="copy-btn"
+                          disabled={editingBlock !== null}
+                          onclick={() => startEditBlock(i, entry.block, entry.data)}
+                        >edit</button>
+                      {/if}
+                    {/if}
+                    {#if blockStatus && blockStatus.eventIdx === i && blockStatus.block === entry.block}
+                      <span class="write-status" class:err={!blockStatus.ok}>{blockStatus.text}</span>
+                    {/if}
+                  </div>
+                {/if}
+              {/each}
+              {#if entries.length === 0}<div>(empty)</div>{/if}
+            </div>
           {/if}
         </li>
       {/each}
@@ -274,9 +471,32 @@
     padding: 6px 8px;
     margin: 4px 0 0;
     overflow-x: auto;
-    word-break: break-all;
-    white-space: pre-wrap;
     user-select: text;
+  }
+  .sector-label { color: var(--text); margin-top: 4px; }
+  .sector-label:first-child { margin-top: 0; }
+  .block-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 16px;
+  }
+  .block-row.trailer .block-data { opacity: 0.6; }
+  .block-num { color: var(--text); }
+  .block-data {
+    font-family: inherit;
+    word-break: break-all;
+    user-select: text;
+  }
+  .trailer-tag { color: var(--text); font-size: 11px; }
+  .block-input {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 1px 4px;
+    background: var(--bg-card);
+    color: var(--text-bright);
+    border: 1px solid var(--cyan);
+    min-width: 280px;
   }
   .copy-btn {
     font-family: inherit;
@@ -288,6 +508,35 @@
     cursor: pointer;
   }
   .copy-btn:hover { background: var(--bg); }
+  .write-btn {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 1px 8px;
+    background: var(--bg-card);
+    color: var(--amber);
+    border: 1px solid var(--amber);
+    cursor: pointer;
+  }
+  .write-btn:hover:not(:disabled) { background: var(--bg); }
+  .write-btn:disabled { opacity: 0.3; cursor: default; }
+  .write-status { font-size: 12px; color: var(--green); }
+  .write-status.err { color: var(--red); }
+  .reader-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+  .reader-status .uid { color: var(--cyan); }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .dot.on { background: var(--green); }
+  .dot.off { background: var(--text); opacity: 0.4; }
   .muted { color: var(--text); }
   .pagination {
     display: flex;

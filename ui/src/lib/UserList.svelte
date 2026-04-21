@@ -11,9 +11,12 @@
   let search = $state('')
   let selectedUid: string | null = $state(null)
   let loading = $state(false)
+  let currentCursor: string | undefined = undefined
+  let prevReaderUid: string | null = null
 
   async function fetchUsers(cursor?: string) {
     loading = true
+    currentCursor = cursor
     const params = new URLSearchParams()
     if (cursor) params.set('cursor', cursor)
     if (search) params.set('neoname', search)
@@ -25,8 +28,25 @@
     loading = false
   }
 
+  async function pollForNewScan() {
+    try {
+      const res = await fetch('/api/reader/status')
+      if (!res.ok) return
+      const next: { uid: string | null } = await res.json()
+      // A band just came off the reader — a new scan likely landed in the DB.
+      if (prevReaderUid !== null && next.uid !== prevReaderUid) {
+        fetchUsers(currentCursor)
+      }
+      prevReaderUid = next.uid
+    } catch {
+      // ignore — kiosk process may not be running
+    }
+  }
+
   $effect(() => {
     fetchUsers()
+    const interval = setInterval(pollForNewScan, 2000)
+    return () => clearInterval(interval)
   })
 
   function doSearch() {
