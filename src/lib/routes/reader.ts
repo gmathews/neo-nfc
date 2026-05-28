@@ -5,6 +5,30 @@ import { KEY_TYPE_A } from 'nfc-pcsc';
 import { AuthCardReadWrite } from 'src/kiosk/AuthCardReadWrite.js';
 import logger, { toError } from 'src/lib/logger.js';
 import { getCurrentCard } from 'src/lib/readerState.js';
+import type { ErrorResponse } from 'src/lib/routes/common.js';
+
+export interface ReaderStatusResponse {
+    present: boolean;
+    uid: string | null;
+    readerName: string | null;
+}
+
+export interface ReaderBlockResponse {
+    uid: string;
+    block: number;
+}
+
+export interface ReaderWriteResponse {
+    uid: string;
+    written: number;
+    skipped: number;
+}
+
+// postReaderWrite's 500 path returns how many blocks made it before the failure.
+export interface ReaderWritePartialFailureResponse {
+    error: string;
+    written: number;
+}
 
 export const getReaderStatusSchema: FastifySchema = {
     response: {
@@ -19,7 +43,7 @@ export const getReaderStatusSchema: FastifySchema = {
     },
 };
 
-export function getReaderStatus() {
+export function getReaderStatus(): ReaderStatusResponse {
     const curr = getCurrentCard();
     if (!curr) return { present: false, uid: null, readerName: null };
     return {
@@ -52,28 +76,34 @@ export const postReaderBlockSchema: FastifySchema = {
     },
 };
 
-export async function postReaderBlock(request: FastifyRequest, reply: FastifyReply) {
+export async function postReaderBlock(request: FastifyRequest, reply: FastifyReply): Promise<ReaderBlockResponse | ErrorResponse> {
     const curr = getCurrentCard();
     if (!curr) {
-        return reply.status(409).send({ error: 'no card on reader' });
+        reply.code(409);
+        return { error: 'no card on reader' };
     }
     const { block, data } = request.body as { block: number; data: string };
     const mifareCheck = AuthCardReadWrite.checkMifare(curr.card);
     if (!mifareCheck) {
-        return reply.status(400).send({ error: 'unsupported card type on reader' });
+        reply.code(400);
+        return { error: 'unsupported card type on reader' };
     }
     const { blockSize, numOfSectors, numOfBlocks } = mifareCheck;
     if (block >= numOfBlocks) {
-        return reply.status(400).send({ error: `block ${block} out of range (max ${numOfBlocks - 1})` });
+        reply.code(400);
+        return { error: `block ${block} out of range (max ${numOfBlocks - 1})` };
     }
     if (blockSize === 16 && isMifareClassicTrailer(block)) {
-        return reply.status(400).send({ error: `block ${block} is a sector trailer — refusing to write` });
+        reply.code(400);
+        return { error: `block ${block} is a sector trailer — refusing to write` };
     }
     if (data.length !== blockSize * 2) {
-        return reply.status(400).send({ error: `data must be ${blockSize * 2} hex chars` });
+        reply.code(400);
+        return { error: `data must be ${blockSize * 2} hex chars` };
     }
     if (!/^[0-9a-fA-F]+$/.test(data)) {
-        return reply.status(400).send({ error: 'data must be hex' });
+        reply.code(400);
+        return { error: 'data must be hex' };
     }
     const keys = Array.from({ length: numOfSectors + 1 }, () => ({
         keyType: KEY_TYPE_A,
@@ -86,7 +116,8 @@ export async function postReaderBlock(request: FastifyRequest, reply: FastifyRep
     } catch (err) {
         const error = toError(err);
         logger.error(error, `block write failed at ${block}`);
-        return reply.status(500).send({ error: error.message });
+        reply.code(500);
+        return { error: error.message };
     }
 }
 
@@ -128,20 +159,23 @@ function isMifareClassicTrailer(block: number): boolean {
     return (block - lowSectorBlocks) % 16 === 15;
 }
 
-export async function postReaderWrite(request: FastifyRequest, reply: FastifyReply) {
+export async function postReaderWrite(request: FastifyRequest, reply: FastifyReply): Promise<ReaderWriteResponse | ErrorResponse | ReaderWritePartialFailureResponse> {
     const curr = getCurrentCard();
     if (!curr) {
-        return reply.status(409).send({ error: 'no card on reader' });
+        reply.code(409);
+        return { error: 'no card on reader' };
     }
     const { data } = request.body as { data: string };
     const mifareCheck = AuthCardReadWrite.checkMifare(curr.card);
     if (!mifareCheck) {
-        return reply.status(400).send({ error: 'unsupported card type on reader' });
+        reply.code(400);
+        return { error: 'unsupported card type on reader' };
     }
     const { blockSize, numOfSectors, numOfBlocks } = mifareCheck;
     const hexPerBlock = blockSize * 2;
     if (data.length % hexPerBlock !== 0) {
-        return reply.status(400).send({ error: `data not aligned to ${blockSize}-byte blocks` });
+        reply.code(400);
+        return { error: `data not aligned to ${blockSize}-byte blocks` };
     }
     const blockCount = Math.min(numOfBlocks, data.length / hexPerBlock);
     const keys = Array.from({ length: numOfSectors + 1 }, () => ({
@@ -167,10 +201,8 @@ export async function postReaderWrite(request: FastifyRequest, reply: FastifyRep
         } catch (err) {
             const error = toError(err);
             logger.error(error, `write failed at block ${block}`);
-            return reply.status(500).send({
-                error: `write failed at block ${block}: ${error.message}`,
-                written,
-            });
+            reply.code(500);
+            return { error: `write failed at block ${block}: ${error.message}`, written };
         }
     }
     return { uid: curr.card.uid, written, skipped };

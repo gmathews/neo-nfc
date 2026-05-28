@@ -2,8 +2,28 @@
 import type { FastifyReply, FastifyRequest, FastifySchema } from 'fastify';
 import { and, asc, count, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import db from 'src/lib/db.js';
+import type { ErrorResponse } from 'src/lib/routes/common.js';
 import { PAGE_SIZE, paginate } from 'src/lib/routes/pagination.js';
 import { feedback, fortune } from 'src/lib/schema.js';
+
+export interface FortunesListResponse {
+    fortunes: { id: number; text: string }[];
+    nextCursor: number | null;
+    prevCursor: number | null;
+}
+
+export interface FortuneResponse {
+    id: number;
+    version: number;
+    text: string;
+    feedback: { count: number; sum: number };
+}
+
+export interface FortunePutResponse {
+    id: number;
+    version: number;
+    text: string;
+}
 
 export const getFortunesSchema: FastifySchema = {
     querystring: {
@@ -34,7 +54,7 @@ export const getFortunesSchema: FastifySchema = {
     },
 };
 
-export async function getFortunes(request: FastifyRequest) {
+export async function getFortunes(request: FastifyRequest): Promise<FortunesListResponse> {
     const { cursor = -1, search } = request.query as { cursor?: number; search?: string };
 
     const latestText = sql<string>`(select text from fortune f2 where f2.id = fortune.id order by f2.version desc limit 1)`;
@@ -95,7 +115,7 @@ export const getFortuneSchema: FastifySchema = {
     },
 };
 
-export async function getFortune(request: FastifyRequest, reply: FastifyReply) {
+export async function getFortune(request: FastifyRequest, reply: FastifyReply): Promise<FortuneResponse | ErrorResponse> {
     const { id } = request.params as { id: number };
     const { version } = request.query as { version?: number };
 
@@ -108,7 +128,8 @@ export async function getFortune(request: FastifyRequest, reply: FastifyReply) {
         .limit(1);
 
     if (result.length === 0) {
-        return reply.status(404).send({ error: version !== undefined ? `fortune ${id} version ${version} not found` : `fortune ${id} not found` });
+        reply.code(404);
+        return { error: version !== undefined ? `fortune ${id} version ${version} not found` : `fortune ${id} not found` };
     }
 
     const [stats] = await db.select({
@@ -156,7 +177,7 @@ export const putFortuneSchema: FastifySchema = {
     },
 };
 
-export async function putFortune(request: FastifyRequest, reply: FastifyReply) {
+export async function putFortune(request: FastifyRequest, reply: FastifyReply): Promise<FortunePutResponse | ErrorResponse> {
     const { id } = request.params as { id: number };
     const { text: newText } = request.body as { text: string };
 
@@ -167,7 +188,8 @@ export async function putFortune(request: FastifyRequest, reply: FastifyReply) {
         .limit(1);
 
     if (latest.length === 0) {
-        return reply.status(404).send({ error: `fortune ${id} not found` });
+        reply.code(404);
+        return { error: `fortune ${id} not found` };
     }
 
     const newVersion = latest[0].version + 1;

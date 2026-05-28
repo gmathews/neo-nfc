@@ -48,6 +48,7 @@ export interface TUI {
     clearPanel: () => void;
     askForm: (title: string, fields: FormField[], header?: string) => Promise<Record<string, string> | null>;
     dismissForm: () => void;
+    isReadOnly: () => boolean;
     destroy: () => void;
 }
 
@@ -66,6 +67,18 @@ export function initTUI(): TUI {
         tags: true,
         style: { border: { fg: palette.chrome }, fg: palette.lime },
         padding: { left: 1, right: 1 },
+    });
+
+    const readOnlyIndicator = blessed.box({
+        parent: banner,
+        top: 0,
+        right: 0,
+        height: 1,
+        width: 13,
+        tags: true,
+        align: 'right',
+        content: '',
+        style: { fg: 'red', bold: true },
     });
 
     const logBox = blessed.log({
@@ -190,6 +203,13 @@ export function initTUI(): TUI {
         clearPanel();
     }
 
+    let readOnly = false;
+    const toggleReadOnly = () => {
+        readOnly = !readOnly;
+        readOnlyIndicator.setContent(readOnly ? '{red-fg}● READ-ONLY{/}' : '');
+        logFn(tag.lime(`read-only mode: ${readOnly ? 'ON' : 'OFF'}`));
+    };
+
     // @types/blessed is incomplete for listbar; blessed accepts prefix styles and command keys
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     (blessed as any).listbar({
@@ -204,11 +224,12 @@ export function initTUI(): TUI {
         style: {
             bg: palette.chrome,
             item: { fg: 'black', bg: palette.chrome },
-            selected: { fg: palette.lime, bg: 'black' },
+            selected: { fg: 'black', bg: palette.chrome },
             prefix: { fg: 'black', bg: palette.chrome, bold: true },
         },
         commands: {
             clear: { keys: ['C-d'], callback: clear },
+            'read-only': { keys: ['C-r'], callback: toggleReadOnly },
             quit: { keys: ['C-c'], callback: () => process.exit(0) },
         },
     });
@@ -266,6 +287,7 @@ export function initTUI(): TUI {
         },
         dismissModal,
         dismissForm,
+        isReadOnly: () => readOnly,
         askForm: (title, fields, header) => new Promise((resolve) => {
             const rowsPerField = 3; // label + widget + spacer
             const headerRows = header ? 2 : 0; // header text + spacer

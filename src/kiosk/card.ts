@@ -121,8 +121,13 @@ export interface CardHandlers {
     handleCardOff: (reader: Reader, card: Card) => Promise<void>;
 }
 
+interface Session {
+    fortunePk: number;
+    wroteBadge: boolean;
+}
+
 export function createCardHandlers(tui: TUI): CardHandlers {
-    const lastFortune = new Map<string, { pk: number }>();
+    const sessions = new Map<string, Session>();
 
     function reportError(err: unknown, msg: string): void {
         logger.error(toError(err), msg);
@@ -146,27 +151,33 @@ export function createCardHandlers(tui: TUI): CardHandlers {
         }
 
         const { pk, id: fortuneId, text } = await getFortune(card.uid);
-        lastFortune.set(card.uid, { pk });
         tui.setPanel(horoscopePanel(text));
         tui.log(t.green('▶ horoscope ready — look right →'));
 
+        let wroteBadge = false;
         if (isAcr122) {
-            try {
-                await writeFortuneBadge(reader, card, fortuneId);
-            } catch (err) {
-                reportError(err, `failed to write augment ${toError(err).message}`);
+            if (tui.isReadOnly()) {
+                tui.log(t.lime('read-only — skipping augment write'));
+            } else {
+                try {
+                    await writeFortuneBadge(reader, card, fortuneId);
+                    wroteBadge = true;
+                } catch (err) {
+                    reportError(err, `failed to write augment ${toError(err).message}`);
+                }
             }
         }
+        sessions.set(card.uid, { fortunePk: pk, wroteBadge });
     }
 
     async function handleCardOff(reader: Reader, card: Card): Promise<void> {
         tui.dismissModal();
         tui.log(t.lime(severedSplash(card.uid)));
-        const shown = lastFortune.get(card.uid);
-        if (shown) {
-            lastFortune.delete(card.uid);
-            const secondTime = await askAndSaveFeedback(tui, card.uid, shown.pk);
-            if (isAcr122u(reader)) {
+        const session = sessions.get(card.uid);
+        if (session) {
+            sessions.delete(card.uid);
+            const secondTime = await askAndSaveFeedback(tui, card.uid, session.fortunePk);
+            if (isAcr122u(reader) && session.wroteBadge) {
                 if (secondTime) {
                     tui.log(`${t.lime('did you visit')} ${t.blue('terminal 418')}${t.lime('?')}`);
                 } else {

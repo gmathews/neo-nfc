@@ -1,9 +1,42 @@
 // HTTP handlers + JSON schemas for listing users and inspecting a single user's events.
 import type { FastifyReply, FastifyRequest, FastifySchema } from 'fastify';
-import { and, asc, eq, gt, lt, sql } from 'drizzle-orm';
+import { asc, eq, gt, lt, type SQL, sql } from 'drizzle-orm';
 import db from 'src/lib/db.js';
+import type { ErrorResponse } from 'src/lib/routes/common.js';
 import { PAGE_SIZE, paginate } from 'src/lib/routes/pagination.js';
 import { cardData, feedback, fortune } from 'src/lib/schema.js';
+
+export interface UsersListResponse {
+    users: { uid: string; lastSeen: string; neoname: string | null }[];
+    nextCursor: string | null;
+    prevCursor: string | null;
+}
+
+export interface FeedbackEvent {
+    type: 'feedback';
+    createdAt: string;
+    fortuneId: number;
+    fortuneVersion: number;
+    reaction: number;
+    comment: string;
+    neoname: string | null;
+}
+
+export interface CardReadEvent {
+    type: 'card_read';
+    createdAt: string;
+    data: string;
+}
+
+export type UserEvent = FeedbackEvent | CardReadEvent;
+
+export interface UserResponse {
+    lastFeedback: Omit<FeedbackEvent, 'type'> | null;
+    lastData: Omit<CardReadEvent, 'type'> | null;
+    events: UserEvent[];
+    nextCursor: string | null;
+    prevCursor: string | null;
+}
 
 export const getUsersSchema: FastifySchema = {
     querystring: {
@@ -35,7 +68,7 @@ export const getUsersSchema: FastifySchema = {
     },
 };
 
-export async function getUsers(request: FastifyRequest) {
+export async function getUsers(request: FastifyRequest): Promise<UsersListResponse> {
     const { cursor, neoname: neonameSearch } = request.query as { cursor?: string; neoname?: string };
 
     const allUsers = sql`(
@@ -46,27 +79,30 @@ export async function getUsers(request: FastifyRequest) {
     const lastSeenCol = sql<string>`max(u.created_at)`;
     const neonameCol = sql<string | null>`(select neoname from feedback f where f.uid = u.uid and f.neoname is not null order by f.created_at desc limit 1)`;
 
-    const baseSelect = () => db.select({
-        uid: sql<string>`u.uid`,
-        lastSeen: lastSeenCol,
-        neoname: neonameCol,
-    }).from(sql`${allUsers} as u`).groupBy(sql`u.uid`);
-
     const neonameFilter = neonameSearch
         ? sql`u.uid in (select uid from feedback where neoname like ${'%' + neonameSearch + '%'})`
         : undefined;
 
-    const withFilters = (...conditions: (ReturnType<typeof lt> | undefined)[]) => {
-        const filtered = conditions.filter((c): c is ReturnType<typeof lt> => c !== undefined);
-        return filtered.length > 0 ? baseSelect().where(and(...filtered)) : baseSelect();
+    // The cursor filter is on max(u.created_at), which is an aggregate — it
+    // must go in HAVING. The neoname filter is on u.uid, which is a plain
+    // row column — that goes in WHERE.
+    const buildQuery = (havingFilter: SQL | undefined) => {
+        let q = db.select({
+            uid: sql<string>`u.uid`,
+            lastSeen: lastSeenCol,
+            neoname: neonameCol,
+        }).from(sql`${allUsers} as u`).$dynamic();
+        if (neonameFilter) q = q.where(neonameFilter);
+        q = q.groupBy(sql`u.uid`);
+        if (havingFilter) q = q.having(havingFilter);
+        return q;
     };
 
     const { items: users, nextCursor, prevCursor } = await paginate({
-        fetchForward: () => cursor
-            ? withFilters(lt(lastSeenCol, cursor), neonameFilter).orderBy(sql`${lastSeenCol} desc`).limit(PAGE_SIZE + 1)
-            : withFilters(neonameFilter).orderBy(sql`${lastSeenCol} desc`).limit(PAGE_SIZE + 1),
+        fetchForward: () => buildQuery(cursor ? lt(lastSeenCol, cursor) : undefined)
+            .orderBy(sql`${lastSeenCol} desc`).limit(PAGE_SIZE + 1),
         fetchPrev: cursor
-            ? () => withFilters(gt(lastSeenCol, cursor), neonameFilter).orderBy(asc(lastSeenCol)).limit(PAGE_SIZE)
+            ? () => buildQuery(gt(lastSeenCol, cursor)).orderBy(asc(lastSeenCol)).limit(PAGE_SIZE)
             : null,
         getCursor: r => r.lastSeen,
     });
@@ -135,7 +171,7 @@ export const getUserSchema: FastifySchema = {
     },
 };
 
-export async function getUser(request: FastifyRequest, reply: FastifyReply) {
+export async function getUser(request: FastifyRequest, reply: FastifyReply): Promise<UserResponse | ErrorResponse> {
     const { uid } = request.params as { uid: string };
     const { cursor } = request.query as { cursor?: string };
 
@@ -158,7 +194,8 @@ export async function getUser(request: FastifyRequest, reply: FastifyReply) {
     const [feedbackRows, cardRows] = await Promise.all([feedbackQuery, cardQuery]);
 
     if (feedbackRows.length === 0 && cardRows.length === 0) {
-        return reply.status(404).send({ error: `user ${uid} not found` });
+        reply.code(404);
+        return { error: `user ${uid} not found` };
     }
 
     const allEvents = [
